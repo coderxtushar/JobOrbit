@@ -1,0 +1,486 @@
+{
+  "_about": {
+    "purpose": "Repeatable labelled dataset for measuring match quality against the real candidate profile (2026 B.Tech CSE grad, ~0.4 years experience, Python/FastAPI/Node backend, React/Next.js frontend, AWS/Docker/Kubernetes, LangChain/agentic-AI evaluation).",
+    "labels": {
+      "relevant": "Should be eligible and should rank in the upper band. A false negative here costs a real opportunity.",
+      "irrelevant": "Must NOT reach the high band. A false positive here wastes an application and is the failure mode this dataset exists to catch.",
+      "adversarial": "Irrelevant, but shares surface tokens or skills with the profile. These are the cases that expose naive token overlap.",
+      "edge": "Tests honesty of missing data, duplicates, and freshness rather than ranking."
+    },
+    "usage": "tests/test_matching_eval.py loads this file, scores every row against a fixture profile built from the real resume, and asserts aggregate precision/recall plus per-row expectations."
+  },
+  "jobs": [
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Core target role, exact stack, fresher band, preferred location",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-R01",
+        "title": "Software Engineer - Backend (Fresher)",
+        "company": "Zeta Platform Labs", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/zeta/jobs/1",
+        "required_skills": ["Python", "FastAPI", "PostgreSQL", "Docker"],
+        "preferred_skills": ["AWS", "Redis"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "work_arrangement": "hybrid",
+        "description": "Build REST APIs in Python and FastAPI on PostgreSQL. Freshers welcome. You will containerise services with Docker and deploy on AWS."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Remote backend Python role for 0-1 years",
+      "record": {
+        "source": "lever", "external_id": "EV-R02",
+        "title": "Backend Developer",
+        "company": "Nimbus Systems", "location": "Remote - India",
+        "url": "https://jobs.lever.co/nimbus/2",
+        "required_skills": ["Python", "Django", "REST", "PostgreSQL"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Join our backend team building Python services. Entry level, 0-2 years experience. Remote within India."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Python developer, explicit fresher",
+      "record": {
+        "source": "manual", "external_id": "EV-R03",
+        "title": "Python Developer",
+        "company": "Harbour Analytics", "location": "Gurgaon, Haryana",
+        "url": "https://careers.example.com/harbour/python-dev",
+        "required_skills": ["Python", "SQL", "Git"],
+        "preferred_skills": ["FastAPI", "MongoDB"],
+        "experience_raw": "Fresher", "employment_type": "full_time",
+        "description": "Write Python services and SQL queries. Freshers welcome. Gurgaon based."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Frontend role on his actual frontend stack",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-R04",
+        "title": "Frontend Developer - React",
+        "company": "Pixelforge", "location": "Remote",
+        "url": "https://boards.greenhouse.io/pixelforge/jobs/4",
+        "required_skills": ["React", "JavaScript", "TypeScript", "Tailwind CSS"],
+        "preferred_skills": ["Next.js"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Build interfaces in React and Next.js with Tailwind CSS. Entry level."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Full-stack on MERN + Next.js, which his projects evidence",
+      "record": {
+        "source": "lever", "external_id": "EV-R05",
+        "title": "Full Stack Developer (MERN)",
+        "company": "Craftbase", "location": "Noida, Uttar Pradesh",
+        "url": "https://jobs.lever.co/craftbase/5",
+        "required_skills": ["Node.js", "Express.js", "MongoDB", "React"],
+        "preferred_skills": ["Next.js", "TypeScript"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "description": "MERN stack development. Node, Express, MongoDB, React. Junior role."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "GenAI engineer on LangChain, his strongest differentiator",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-R06",
+        "title": "Generative AI Engineer",
+        "company": "Sentient Stack", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/sentient/jobs/6",
+        "required_skills": ["Python", "LangChain", "LLM", "FastAPI"],
+        "preferred_skills": ["Agentic AI", "Vector Databases"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "work_arrangement": "hybrid",
+        "description": "Build LLM applications with LangChain and FastAPI. Experience with agentic AI workflows valued. Early career role."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Agentic AI role matching his Ethara AI work directly",
+      "record": {
+        "source": "lever", "external_id": "EV-R07",
+        "title": "Agentic AI Engineer",
+        "company": "Loopwork AI", "location": "Remote - India",
+        "url": "https://jobs.lever.co/loopwork/7",
+        "required_skills": ["Python", "Agentic AI", "LLM Evaluation", "LangChain"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Design and evaluate autonomous AI agents. Benchmarking pipelines and evaluation harnesses. Junior engineers encouraged to apply."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "LLM application developer, exact overlap",
+      "record": {
+        "source": "manual", "external_id": "EV-R08",
+        "title": "LLM Application Developer",
+        "company": "Textual Inc", "location": "Remote",
+        "url": "https://careers.example.com/textual/llm-dev",
+        "required_skills": ["Python", "LLM", "LangChain", "REST APIs"],
+        "experience_raw": "1 year", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Ship LLM-backed product features. Python, LangChain, prompt evaluation."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Cloud engineer on AWS/Docker/Kubernetes which he lists",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-R09",
+        "title": "Cloud Engineer - Associate",
+        "company": "Stratus Cloudworks", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/stratus/jobs/9",
+        "required_skills": ["AWS", "Docker", "Kubernetes", "Linux"],
+        "preferred_skills": ["Terraform", "Python"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "description": "Operate AWS workloads, build Docker images, manage Kubernetes clusters. Associate level."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "DevOps entry level on GitHub Actions, which he lists",
+      "record": {
+        "source": "lever", "external_id": "EV-R10",
+        "title": "DevOps Engineer (Entry Level)",
+        "company": "Pipeline Co", "location": "Remote - India",
+        "url": "https://jobs.lever.co/pipeline/10",
+        "required_skills": ["Docker", "GitHub Actions", "Linux", "CI/CD"],
+        "preferred_skills": ["Kubernetes", "AWS"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Own CI/CD with GitHub Actions. Containerise with Docker. Entry level DevOps."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "Internship is an accepted employment type in the profile",
+      "record": {
+        "source": "manual", "external_id": "EV-R11",
+        "title": "Software Engineering Intern - Backend",
+        "company": "Kernel Labs", "location": "Remote",
+        "url": "https://careers.example.com/kernel/intern",
+        "required_skills": ["Python", "Git", "SQL"],
+        "experience_raw": "0 years", "employment_type": "internship",
+        "work_arrangement": "remote",
+        "description": "Six month backend internship. Python and SQL."
+      }
+    },
+    {
+      "label": "relevant",
+      "expect": "high_or_review",
+      "why": "ML engineer explicitly entry level",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-R12",
+        "title": "Machine Learning Engineer - New Grad",
+        "company": "Inferentia Labs", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/inferentia/jobs/12",
+        "required_skills": ["Python", "Machine Learning", "Docker"],
+        "preferred_skills": ["LLM", "AWS"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "description": "New grad ML engineering role. Python, model evaluation, Docker. 2026 graduates welcome."
+      }
+    },
+
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "Senior role requiring 8+ years",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-I01",
+        "title": "Senior Staff Software Engineer",
+        "company": "Monolith Corp", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/monolith/jobs/101",
+        "required_skills": ["Python", "Kubernetes", "Distributed Systems", "AWS"],
+        "experience_raw": "8-12 years", "employment_type": "full_time",
+        "description": "Lead architecture for distributed systems. Minimum 8 years of professional experience required. You will mentor senior engineers."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "People-management role, not an IC engineering role",
+      "record": {
+        "source": "lever", "external_id": "EV-I02",
+        "title": "Engineering Manager - Platform",
+        "company": "Monolith Corp", "location": "Remote",
+        "url": "https://jobs.lever.co/monolith/102",
+        "required_skills": ["Kubernetes", "AWS", "People Management", "Hiring"],
+        "experience_raw": "10+ years", "employment_type": "full_time",
+        "description": "Manage a platform team of twelve engineers. 10+ years industry experience, 4+ years managing."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "Non-technical sales role",
+      "record": {
+        "source": "manual", "external_id": "EV-I03",
+        "title": "Enterprise Sales Executive",
+        "company": "Revenue Partners", "location": "Mumbai, Maharashtra",
+        "url": "https://careers.example.com/revenue/sales",
+        "required_skills": ["B2B Sales", "CRM", "Negotiation"],
+        "experience_raw": "3-6 years", "employment_type": "full_time",
+        "description": "Close enterprise SaaS deals. Quota carrying role. Salesforce CRM experience required."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "HR role, no engineering content",
+      "record": {
+        "source": "manual", "external_id": "EV-I04",
+        "title": "HR Business Partner",
+        "company": "Peoplewise", "location": "Pune, Maharashtra",
+        "url": "https://careers.example.com/peoplewise/hrbp",
+        "required_skills": ["Employee Relations", "HRIS", "Payroll"],
+        "experience_raw": "5-8 years", "employment_type": "full_time",
+        "description": "Partner with business leaders on people strategy, performance cycles and payroll."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "Completely different stack and seniority",
+      "record": {
+        "source": "manual", "external_id": "EV-I05",
+        "title": "SAP ABAP Consultant",
+        "company": "Enterprise Integrators", "location": "Hyderabad, Telangana",
+        "url": "https://careers.example.com/ei/abap",
+        "required_skills": ["SAP ABAP", "SAP HANA", "Fiori"],
+        "experience_raw": "6-9 years", "employment_type": "full_time",
+        "description": "Develop SAP ABAP reports and interfaces on S/4HANA."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "Embedded firmware, different domain and seniority",
+      "record": {
+        "source": "manual", "external_id": "EV-I06",
+        "title": "Embedded Firmware Engineer",
+        "company": "Silicon Instruments", "location": "Chennai, Tamil Nadu",
+        "url": "https://careers.example.com/silicon/firmware",
+        "required_skills": ["Embedded C", "RTOS", "ARM Cortex", "I2C"],
+        "experience_raw": "5-8 years", "employment_type": "full_time",
+        "description": "Write RTOS firmware for ARM Cortex-M microcontrollers. Board bring-up and driver development."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "filtered_or_not_high",
+      "why": "Onsite abroad, outside preferred locations",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-I07",
+        "title": "Backend Engineer",
+        "company": "Alpenbank Technology", "location": "Zurich, Switzerland",
+        "url": "https://boards.greenhouse.io/alpenbank/jobs/107",
+        "required_skills": ["Python", "PostgreSQL", "Kubernetes"],
+        "experience_raw": "4-7 years", "employment_type": "full_time",
+        "work_arrangement": "onsite",
+        "description": "Onsite in Zurich. Relocation required. 4+ years experience."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "Data entry, non-engineering",
+      "record": {
+        "source": "manual", "external_id": "EV-I08",
+        "title": "Data Entry Operator",
+        "company": "Backoffice Services", "location": "Noida, Uttar Pradesh",
+        "url": "https://careers.example.com/backoffice/dataentry",
+        "required_skills": ["MS Excel", "Typing", "Data Entry"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "description": "Enter records into internal systems. Fresher friendly. Excel knowledge required."
+      }
+    },
+    {
+      "label": "irrelevant",
+      "expect": "not_high",
+      "why": "Java architect, senior, different stack",
+      "record": {
+        "source": "manual", "external_id": "EV-I09",
+        "title": "Java Solution Architect",
+        "company": "Legacy Systems Group", "location": "Bengaluru, India",
+        "url": "https://careers.example.com/legacy/architect",
+        "required_skills": ["Java", "Spring Boot", "Microservices", "Oracle"],
+        "experience_raw": "12+ years", "employment_type": "full_time",
+        "description": "Own solution architecture for banking platforms. 12+ years in Java required."
+      }
+    },
+
+    {
+      "label": "adversarial",
+      "expect": "not_high",
+      "why": "Shares the token 'Engineer' and nothing else. Tests title-token overlap.",
+      "record": {
+        "source": "manual", "external_id": "EV-A01",
+        "title": "Mechanical Design Engineer",
+        "company": "Precision Tools Ltd", "location": "Pune, Maharashtra",
+        "url": "https://careers.example.com/precision/mech",
+        "required_skills": ["SolidWorks", "AutoCAD", "GD&T", "Sheet Metal"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "description": "Design sheet metal components in SolidWorks. Fresher mechanical engineers welcome. No programming involved."
+      }
+    },
+    {
+      "label": "adversarial",
+      "expect": "not_high",
+      "why": "Shares 'test'/'automation' vocabulary with his benchmarking work but is a manual QA role at 5 years",
+      "record": {
+        "source": "manual", "external_id": "EV-A02",
+        "title": "Senior Manual QA Tester",
+        "company": "Quality First", "location": "Bengaluru, India",
+        "url": "https://careers.example.com/qf/manual-qa",
+        "required_skills": ["Manual Testing", "Test Cases", "JIRA", "Regression Testing"],
+        "experience_raw": "5-8 years", "employment_type": "full_time",
+        "description": "Write and execute manual test cases. Regression testing and defect logging in JIRA. No automation or coding required."
+      }
+    },
+    {
+      "label": "adversarial",
+      "expect": "not_high",
+      "why": "Title contains 'AI' and 'Engineer' but it is a content/marketing role",
+      "record": {
+        "source": "manual", "external_id": "EV-A03",
+        "title": "AI Prompt Engineer - Content Marketing",
+        "company": "Brandvoice Media", "location": "Remote",
+        "url": "https://careers.example.com/brandvoice/prompt",
+        "required_skills": ["Copywriting", "SEO", "Content Strategy", "ChatGPT"],
+        "experience_raw": "2-4 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Write marketing copy using generative AI tools. SEO and brand voice ownership. This is a content role, not a software engineering role. No coding."
+      }
+    },
+    {
+      "label": "adversarial",
+      "expect": "not_high",
+      "why": "Shares 'Developer' plus 'Python' as a trivial mention, but is a senior data-science role",
+      "record": {
+        "source": "manual", "external_id": "EV-A04",
+        "title": "Principal Data Scientist",
+        "company": "Quantify Research", "location": "Bengaluru, India",
+        "url": "https://careers.example.com/quantify/principal-ds",
+        "required_skills": ["Python", "Causal Inference", "Bayesian Statistics", "PhD"],
+        "experience_raw": "9-14 years", "employment_type": "full_time",
+        "description": "Lead causal inference research. PhD in statistics or economics required. 9+ years post-doctoral industry experience."
+      }
+    },
+    {
+      "label": "adversarial",
+      "expect": "not_high",
+      "why": "Technical-support role that lists his exact tools but is not engineering",
+      "record": {
+        "source": "manual", "external_id": "EV-A05",
+        "title": "Technical Support Engineer - Tier 1",
+        "company": "Helpdesk Global", "location": "Gurgaon, Haryana",
+        "url": "https://careers.example.com/helpdesk/tier1",
+        "required_skills": ["Linux", "Docker", "Ticketing", "Customer Support"],
+        "experience_raw": "0-2 years", "employment_type": "full_time",
+        "description": "Answer customer tickets about our Linux and Docker based product. Rotational night shifts. Troubleshooting, not development."
+      }
+    },
+
+    {
+      "label": "edge",
+      "expect": "freshness_unassessable",
+      "why": "No posting date: freshness must be reported unassessable, not guessed",
+      "record": {
+        "source": "manual", "external_id": "EV-E01",
+        "title": "Backend Developer - Python",
+        "company": "Datebless Co", "location": "Remote",
+        "url": "https://careers.example.com/dateless/backend",
+        "required_skills": ["Python", "FastAPI", "PostgreSQL"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "description": "Python backend role, no posting date supplied by the source."
+      }
+    },
+    {
+      "label": "edge",
+      "expect": "skills_inferred_capped",
+      "why": "No skills published: inferred skills must be capped and labelled uncertain",
+      "record": {
+        "source": "manual", "external_id": "EV-E02",
+        "title": "Software Engineer",
+        "company": "Terse Listings Inc", "location": "Remote",
+        "url": "https://careers.example.com/terse/swe",
+        "required_skills": [],
+        "experience_raw": "", "employment_type": "full_time",
+        "description": "We are hiring a software engineer. Apply now."
+      }
+    },
+    {
+      "label": "edge",
+      "expect": "duplicate_merged",
+      "why": "Same posting as EV-E04 from a second platform; must collapse into one job with two source references",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-E03",
+        "title": "Backend Engineer - Python",
+        "company": "Twinpost Technologies Pvt Ltd", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/twinpost/jobs/900",
+        "required_skills": ["Python", "FastAPI"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "description": "Build Python backend services with FastAPI in Bengaluru."
+      }
+    },
+    {
+      "label": "edge",
+      "expect": "duplicate_merged",
+      "why": "Cross-platform duplicate of EV-E03 with a richer skill list, which must union rather than overwrite",
+      "record": {
+        "source": "lever", "external_id": "EV-E04",
+        "title": "Backend Engineer - Python",
+        "company": "Twinpost Technologies", "location": "Bengaluru, India",
+        "url": "https://jobs.lever.co/twinpost/900",
+        "required_skills": ["Python", "FastAPI", "PostgreSQL", "Docker"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "description": "Build Python backend services with FastAPI in Bengaluru."
+      }
+    },
+    {
+      "label": "edge",
+      "expect": "stale",
+      "why": "Posted long ago: freshness must score low and the age must be visible",
+      "record": {
+        "source": "manual", "external_id": "EV-E05",
+        "title": "Python Developer",
+        "company": "Stale Postings Ltd", "location": "Remote",
+        "url": "https://careers.example.com/stale/python",
+        "required_skills": ["Python", "FastAPI"],
+        "experience_raw": "0-1 years", "employment_type": "full_time",
+        "work_arrangement": "remote",
+        "posted_days_ago": 400,
+        "description": "An old listing kept open. Python and FastAPI."
+      }
+    },
+    {
+      "label": "edge",
+      "expect": "borderline",
+      "why": "2-4 years required against 0.4 years held: should be eligible-but-penalised, not silently high",
+      "record": {
+        "source": "greenhouse", "external_id": "EV-E06",
+        "title": "Software Engineer II - Backend",
+        "company": "Midlevel Systems", "location": "Bengaluru, India",
+        "url": "https://boards.greenhouse.io/midlevel/jobs/906",
+        "required_skills": ["Python", "FastAPI", "PostgreSQL", "AWS"],
+        "experience_raw": "2-4 years", "employment_type": "full_time",
+        "description": "Mid-level backend role. 2-4 years of professional Python experience expected."
+      }
+    }
+  ]
+}

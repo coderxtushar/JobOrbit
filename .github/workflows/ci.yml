@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Upper bound is deliberate: pydantic-core has no 3.14 wheel, so 3.14 would
+        # attempt a source build and fail. Keep in step with requires-python.
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Verify the app imports without a database or config
+        run: python -c "import app.main, ui.components, ui.theme; print('imports ok')"
+
+      - name: Create the schema from migrations
+        env:
+          JA_DATABASE_URL: sqlite+pysqlite:///./var/ci.db
+          JA_DATA_DIR: ./var
+        run: |
+          alembic upgrade head
+          alembic check
+          alembic downgrade base
+
+      - name: Run the test suite
+        run: pytest -q --cov=app --cov-report=term --cov-fail-under=85
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: .coverage
+          if-no-files-found: ignore
+
+  lint:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Ruff (lint)
+        run: ruff check app ui tests
+      - name: Ruff (format check)
+        run: ruff format --check app ui tests
+      - name: mypy
+        run: mypy app
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: pip-audit (known CVEs in dependencies)
+        run: pip-audit --strict --desc
+        continue-on-error: true
+
+      - name: Bandit (static security scan)
+        run: bandit -r app ui -ll -x tests
+
+      - name: Compliance guarantees must hold
+        # These assert the project's central promises mechanically: no adapter may enable
+        # automated submission, no route may submit an application, and every restricted
+        # source must refuse discovery with a policy reason instead of returning data.
+        run: pytest tests/test_compliance.py -q
+
+      - name: No scraping or browser-automation dependency may be introduced
+        run: |
+          if grep -riE '^(playwright|selenium|puppeteer|undetected-chromedriver|cloudscraper|scrapy|beautifulsoup4|2captcha|anticaptcha)' requirements.txt; then
+            echo "::error::A scraping or browser-automation dependency was added. See docs/COMPLIANCE.md."
+            exit 1
+          fi
+          echo "no prohibited dependency found"

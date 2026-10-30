@@ -1,0 +1,19 @@
+# Theme tokens from docs/DESIGN.md. Streamlit reads this at startup, so the base palette
+# applies before any custom CSS is injected and there is no flash of default styling.
+[theme]
+primaryColor = "#5146E5"
+backgroundColor = "#F7F8FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#141A2B"
+font = "sans serif"
+
+[server]
+headless = true
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = true
