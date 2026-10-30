@@ -1,0 +1,63 @@
+# Accepted dependency advisories — security baseline
+#
+# Every ID below was reviewed against THIS application's actual code paths and judged
+# unreachable or not materially exposed. CI compares the live pip-audit result against
+# this file and fails on anything NOT listed, so a new advisory cannot slip in silently.
+#
+# Re-review this file at every release. Format: one advisory ID per line.
+#
+# -------------------------------------------------------------------------------------
+# pillow (all IDs) — NOT REACHABLE
+#   pillow is a transitive dependency of streamlit. This application never imports PIL
+#   and never calls Image.open(); verified with `grep -rn "PIL\|Image.open" app/ ui/`
+#   returning no matches. The decoder CVEs require decoding an attacker-supplied image.
+#   Ceiling: streamlit 1.41.1 pins pillow<12, so the fix needs a streamlit major upgrade.
+#
+# starlette (all IDs) — NOT REACHABLE / LOW
+#   - Range-header ReDoS and Windows UNC SSRF both require StaticFiles or FileResponse.
+#     This app mounts neither; verified with `grep -rn "StaticFiles\|FileResponse\|mount("`
+#     returning no matches.
+#   - Host-header path injection requires logic that reads the reconstructed request.url.
+#     Nothing in app/api does; verified by grep.
+#   - urlencoded form-limit bypass: the two upload routes use multipart, every body is
+#     validated by Pydantic, and the server binds 127.0.0.1 by default.
+#   Ceiling: fastapi 0.115.6 pins starlette<0.42.
+#
+# streamlit — WINDOWS ONLY / LOCAL
+#   - UNC SSRF in ComponentRequestHandler affects Windows hosts only.
+#   - Weak hash in the caching layer requires local access.
+#   The dashboard binds to localhost. See docs/RELEASE.md for the upgrade recommendation.
+#
+# pytest — DEVELOPMENT ONLY
+#   /tmp/pytest-of-{user} local privilege issue. Not shipped and not part of the runtime.
+# -------------------------------------------------------------------------------------
+
+PYSEC-2026-165
+PYSEC-2026-2249
+PYSEC-2026-2250
+PYSEC-2026-2251
+PYSEC-2026-2252
+PYSEC-2026-2253
+PYSEC-2026-2254
+PYSEC-2026-2255
+PYSEC-2026-2256
+PYSEC-2026-2257
+PYSEC-2026-2874
+PYSEC-2026-3451
+PYSEC-2026-3453
+PYSEC-2026-3454
+PYSEC-2026-3493
+PYSEC-2026-3494
+PYSEC-2026-3495
+PYSEC-2026-3496
+GHSA-78g4-xqwv-q3g8
+PYSEC-2026-161
+PYSEC-2026-248
+PYSEC-2026-249
+PYSEC-2026-1941
+PYSEC-2026-1942
+PYSEC-2026-2280
+PYSEC-2026-2281
+PYSEC-2026-212
+PYSEC-2026-2285
+PYSEC-2026-1845

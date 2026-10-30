@@ -1,0 +1,78 @@
+[project]
+name = "jobassist"
+version = "0.4.0"
+description = "Local-first AI job search and application assistant. Compliance-first: no unauthorized scraping, no automated submission."
+requires-python = ">=3.11,<3.14"
+readme = "README.md"
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "python-multipart==0.0.32",
+    "pydantic==2.10.5",
+    "pydantic-settings==2.7.1",
+    "SQLAlchemy==2.0.37",
+    "alembic==1.14.1",
+    "APScheduler==3.11.0",
+    "requests==2.34.2",
+    "httpx==0.28.1",
+    "PyMuPDF==1.25.2",
+    "python-docx==1.1.2",
+    "streamlit==1.41.1",
+]
+
+[project.optional-dependencies]
+# Optional. The application is fully functional without these.
+llm = ["openai>=1.59.0"]
+dev = ["pytest==8.3.4", "pytest-cov==6.0.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*", "ui*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/scheduler.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",    # line length is enforced by the formatter, not the linter
+    "B008",    # FastAPI's Depends()/File()/Form() defaults are the documented idiom
+    "SIM105",  # contextlib.suppress hides which exception was tolerated
+    "SIM102",  # the nested ifs here are guard clauses; merging them into a 3-clause
+               # `and` is less readable, and one case needs the outer guard before
+               # dereferencing an enum's .value
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+# C416 wants dict(rows), but SQLAlchemy returns Sequence[Row[...]], which mypy rejects as
+# an Iterable[tuple[...]]. The explicit comprehension satisfies both tools; mypy is right.
+"app/db/repositories/matches.py" = ["C416"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+# Third-party packages that ship no type information. `openai` is an optional extra and
+# is deliberately not installed in the default environment.
+[[tool.mypy.overrides]]
+module = ["fitz", "apscheduler.*", "openai", "docx", "docx.*"]
+ignore_missing_imports = true

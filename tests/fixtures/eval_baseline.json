@@ -1,0 +1,56 @@
+{
+ "_about": {
+  "purpose": "Quality gate for tests/test_matching_benchmark.py. The benchmark asserts the current ranker is no worse than every number in 'metrics'. This is a regression gate, not a target.",
+  "dataset": "tests/fixtures/eval_jobs_real.json (version 5, 58 real listings)",
+  "measured_at": "2026-10-29",
+  "regenerate": "Only when a change is intended to move these numbers: run tests/test_matching_benchmark.py::test_report_measured_metrics with -s, read the printed 'current vs baseline' table, and update the values deliberately.",
+  "ceilings": "The dataset contains 7 'relevant' rows, so precision@10 cannot exceed 0.70. Rows labelled adjacent, over_experience_bar, preference_mismatch and edge are excluded from precision and recall, which is why precision@20 is not simply 7/20.",
+  "previous_metrics_caveat": "'previous_metrics' were measured on the ranker before the required/preferred/incidental skill classification, the role-family rule and the description-derived experience bar were added, against dataset version 3. Applying the prose experience bar then revealed that seven rows had been mislabelled 'adjacent' when the project's own 2-year tolerance should exclude them, so versions 4 and 5 relabelled those rows. The aggregate precision figures therefore have different denominators across the two runs and should not be subtracted from each other. The false-positive rate and the per-row facts below are directly comparable."
+ },
+ "metrics": {
+  "precision_at_10": 0.6,
+  "precision_at_20": 0.3684,
+  "false_positive_rate_above_threshold": 0.0,
+  "relevant_recall": 0.8571,
+  "bad_rows_in_high_band": 0.0
+ },
+ "previous_metrics": {
+  "precision_at_10": 0.6,
+  "precision_at_20": 0.35,
+  "false_positive_rate_above_threshold": 0.0303,
+  "relevant_recall": 0.8571,
+  "bad_rows_in_high_band": 0.0
+ },
+ "per_row_before_after": [
+  {
+   "listing": "Software Engineer - Backend @ sardine (India, states 7+ years)",
+   "before": "85.7, high band, ranked 1st of all eligible rows",
+   "after": "filtered out, reason: states in its description that it requires at least 7 years"
+  },
+  {
+   "listing": "Software Engineer, AI Product @ Vanta (states 7 years)",
+   "before": "83.2, high band, ranked 2nd",
+   "after": "filtered out with the years quoted"
+  },
+  {
+   "listing": "Software Engineer, Integrations Platform @ Vanta (states 6+ years)",
+   "before": "82.1, high band, ranked 3rd",
+   "after": "filtered out with the years quoted"
+  },
+  {
+   "listing": "Software Engineer, Developer Velocity @ Hex (states 5+ years)",
+   "before": "82.0, high band, ranked 4th",
+   "after": "filtered out with the years quoted"
+  },
+  {
+   "listing": "AI Agent Support Specialist @ Vanta (support role, title contains a profile skill)",
+   "before": "66.8, above the candidate's own 65 threshold, title scored 41/100",
+   "after": "below the threshold; title capped by the role-family rule"
+  },
+  {
+   "listing": "Count of unsuitable or over-bar rows occupying the high band",
+   "before": "4",
+   "after": "0"
+  }
+ ]
+}
