@@ -12,8 +12,14 @@ from app.db.models import (
     ApplicationAnswer,
     ApplicationEvent,
     ApplicationStatus,
+    JobSourceReference,
     Outcome,
+    SourceName,
 )
+
+#: ``list`` is a method on ``ApplicationRepository``, so a bare ``list[...]`` annotation
+#: inside the class body resolves to that method instead of the generic type.
+SourceNameList = list[SourceName]
 
 
 class DuplicateApplicationError(RuntimeError):
@@ -117,3 +123,23 @@ class ApplicationRepository:
             select(Application.outcome, func.count(Application.id)).group_by(Application.outcome)
         ).all()
         return {outcome.value: count for outcome, count in rows}
+
+    def counts_by_source(self) -> dict[str, int]:
+        """Applications per source of the job they were prepared for."""
+        rows = self._session.execute(
+            select(JobSourceReference.source, func.count(func.distinct(Application.id)))
+            .join(JobSourceReference, JobSourceReference.job_id == Application.job_id)
+            .group_by(JobSourceReference.source)
+        ).all()
+        return {source.value: count for source, count in rows}
+
+    def status_counts_for_sources(self, sources: SourceNameList) -> dict[str, int]:
+        if not sources:
+            return {}
+        rows = self._session.execute(
+            select(Application.status, func.count(func.distinct(Application.id)))
+            .join(JobSourceReference, JobSourceReference.job_id == Application.job_id)
+            .where(JobSourceReference.source.in_(sources))
+            .group_by(Application.status)
+        ).all()
+        return {status.value: count for status, count in rows}

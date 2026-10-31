@@ -13,7 +13,8 @@ because the design would be dishonest otherwise:
    platform publishes an interface for it: the **Greenhouse, Lever and Workable** job-board
    APIs, plus job-alert emails in your own mailbox. Everything else is file import. Every
    citation is in [docs/COMPLIANCE.md](docs/COMPLIANCE.md) and the full per-platform table
-   is in [docs/SOURCES.md](docs/SOURCES.md).
+   is in [docs/SOURCES.md](docs/SOURCES.md). India-relevant boards, with the measured
+   results of a real run, are in [docs/INDIA_SOURCES.md](docs/INDIA_SOURCES.md).
 2. **It does not submit applications.** There is no endpoint, no code path and no button
    that clicks Apply. Indeed's terms state plainly that "use of any automation, scripting,
    or bots to automate the Indeed Apply process ... is prohibited". The app prepares the
@@ -81,6 +82,53 @@ Then open **http://localhost:8501**. The API docs are at **http://127.0.0.1:8000
 
 ---
 
+## The two surfaces
+
+One Streamlit app serves a public landing page and a private workspace.
+
+**The landing page** is the root URL. It renders markup and reads `JA_DEMO_MODE`, and does
+nothing else: no API start, no database session, no migration, no demo seed. Arriving costs
+a template render, which is asserted two ways — a test walks its AST for banned calls, and
+a browser run confirms no database file is created. Its stylesheet hides the sidebar, so
+the operational chrome only appears once you are inside.
+
+**The workspace** is 16 pages across four sections. Routing is `st.navigation`, so every
+page has a real URL that survives refresh, bookmarking and the back button:
+
+| Section | Pages |
+|---|---|
+| Main | Overview · Resume and profile · Job discovery · Job feed · Job detail |
+| Platform assistants | Naukri · LinkedIn · Indeed · Wellfound · ATS & other platforms |
+| Applications | Bulk preparation · Action inbox · Review queue · Application tracker |
+| System | Settings and sources · Logs and diagnostics |
+
+`/overview`, `/linkedin`, `/review` and the rest are all deep-linkable. The embedded API is
+started by one wrapper shared by every workspace page, so it comes up lazily on whichever
+page you open first — including a deep link — and never from the landing page.
+
+### Platform assistants
+
+The five platform sections are a *view* of the source adapters, not a second source of
+truth. Each one names the `SourceName` values it covers; every capability, policy citation,
+limitation and count is read back from the adapter and the database at request time through
+`GET /api/platforms/{key}`. A hand-written capability list would drift from the adapters,
+and the one thing this project must not get wrong is telling you a platform supports
+something it does not.
+
+Three rules the pages follow:
+
+- **No count is invented.** A platform with nothing stored says so, in an empty state.
+- **Unavailable actions are shown, not hidden.** "This platform publishes no search API" is
+  information; a missing button looks like an unfinished feature.
+- **Submission is labelled permanently unavailable** on every platform, and the adapter
+  dataclass plus a database `CHECK` constraint make that impossible to override.
+
+Only the ATS group reports automated discovery, because only those publishers expose an
+interface whose documented purpose is serving one company's own board. The other four are
+import-only *by policy*, and each page quotes the specific reason.
+
+---
+
 ## Deploying a public demo
 
 This app normally runs as **two processes** — a FastAPI service and a Streamlit dashboard
@@ -94,9 +142,22 @@ is already listening, and a no-op when `JA_API_BASE_URL` names an API elsewhere,
 two-process deployment is never hijacked.
 
 **Demo mode replaces your data with sample data.** A shared URL has no per-user login, so
-`JA_DEMO_MODE=true` seeds a fictional candidate plus seven listings and **refuses resume
-uploads** with HTTP 403. The refusal lives in the API, not in the UI, so it holds even if
-somebody calls the endpoint directly.
+`JA_DEMO_MODE=true` seeds a fictional candidate plus seven listings and **refuses the writes
+whose cost or blast radius lands on somebody else**:
+
+| Refused in demo mode | Why |
+|---|---|
+| Resume upload | No per-user login, so one visitor's resume would be readable by the next |
+| Job import (JSON and CSV) | Writes arbitrary text that every later visitor would see |
+| Discovery runs | Calls other companies' job-board APIs, spending their rate limit per visitor |
+| Bulk preparation runs | A hundred-plus preparations is too expensive for a shared container |
+| Source capability changes | Capabilities are a compliance setting, not a preference |
+
+Light writes stay enabled — shortlist, skip, score, prepare one application, answer an
+inbox question — because exercising them is the point of the demo and they only touch data
+that is already fictional. Every refusal is enforced in the API, not hidden in the UI, so it
+holds if somebody calls the endpoint directly, and a test fails if a new mutating route is
+added without classifying it.
 
 ### Steps
 
@@ -109,13 +170,33 @@ somebody calls the endpoint directly.
    JA_DEMO_MODE = "true"
    ```
 
-4. Deploy. First load takes about half a minute while migrations run and the sample feed
-   is scored.
+4. Deploy. The landing page appears immediately. The first workspace page you open takes
+   about half a minute while migrations run and the sample feed is scored.
 
 The seeded feed is chosen to show every honesty case in one screen: three genuine matches
 in the high band, a senior role filtered with its stated years quoted, a content-free
 listing that scores 100 and is still demoted to *worth a look* at low confidence, a
 support role below the threshold, and a sales role filtered out.
+
+### Sign-in is designed for, not enabled
+
+[`app/auth.py`](app/auth.py) defines `AuthProvider` and `CurrentUser`, and the landing page
+marks sign-in "coming soon". **Nothing authenticates anything today**: the only provider
+returns the same principal for every request and reports `is_authenticated=False`, because
+no credential was presented and none was checked. `st.session_state` is per-session
+scratch space and is never treated as a security boundary.
+
+Real sign-in needs four things, in order, and a shared deployment must stay in demo mode
+until all four exist:
+
+1. A `user` table and a `user_id` foreign key on `candidate_profile`, `resume`, `job_match`,
+   `application` and `saved_answer`. Jobs can stay shared; anything derived from a person
+   cannot.
+2. `current_principal` resolved from a verified OIDC ID token, not a client-controlled
+   header.
+3. Authorization in the repository layer, so a query cannot return another user's rows even
+   if a route forgets to filter.
+4. Per-user artifact paths under `var/` with the owner in the key.
 
 ### What not to deploy
 
@@ -143,17 +224,17 @@ Actual output, from this machine (macOS, CPython 3.12.15):
 ```
 ........................................................................ [ 89%]
 ...................................................                      [100%]
-560 passed in 39.34s
+595 passed in 38.35s
 ```
 
 All quality gates, as run in CI:
 
 | Gate | Command | Result |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest` | 560 passed |
+| Tests | `.venv/bin/python -m pytest` | 595 passed |
 | Lint | `.venv/bin/ruff check app ui tests` | clean |
 | Format | `.venv/bin/ruff format --check app ui tests` | clean |
-| Types | `.venv/bin/mypy app` | no issues in 76 files |
+| Types | `.venv/bin/mypy app` | no issues in 80 files |
 | Static security | `.venv/bin/bandit -r app ui -ll` | 0 medium/high |
 | Dependency CVEs | `.venv/bin/pip-audit` | see `security-baseline.txt` |
 
@@ -253,7 +334,7 @@ Cosmetic. Install it for faster reloads (`pip install watchdog`) or ignore it.
 ## Architecture
 
 ```
-ui/            Streamlit dashboard, 11 views. Talks to the backend only over HTTP.
+ui/            Landing page + workspace (16 pages). Talks to the backend only over HTTP.
   │  http
 app/api/       FastAPI routers, Pydantic validation, one error envelope
 app/services/  business logic: parsing, normalization, dedup, filters, matching,
@@ -472,7 +553,7 @@ app/
   sources/  base.py  registry.py  manual_import.py  email_alerts.py
             linkedin.py  indeed.py  naukri.py  wellfound.py
 ui/         streamlit_app.py  api_client.py  components.py  views/
-tests/      conftest.py + 22 test modules (560 tests) + fixtures/ (labelled benchmark)
+tests/      conftest.py + 23 test modules (595 tests) + fixtures/ (labelled benchmark)
 docs/       PLAN.md  COMPLIANCE.md  ARCHITECTURE.md  SCHEMA.md  API.md  DESIGN.md
             RELEASE.md
 .github/    workflows/ci.yml - tests, lint, types, security on 3.11/3.12/3.13

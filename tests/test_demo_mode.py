@@ -43,7 +43,7 @@ def test_demo_mode_refuses_a_resume_upload(demo_client: TestClient) -> None:
     )
     assert response.status_code == 403
     body = response.json()["error"]
-    assert body["code"] == "demo_mode_upload_blocked"
+    assert body["code"] == "demo_mode_resume_upload_blocked"
     assert "no per-user login" in body["message"]
 
 

@@ -263,6 +263,19 @@ class CandidateProfile(Base):
     scoring_weights: Mapped[dict[str, Any]] = mapped_column(default=dict)
     extra_answers: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
+    # Hard constraints: a listing failing one of these is filtered out with a reason.
+    # Separated from the soft preferences above because the two must not be confused —
+    # "Bengaluru preferred" should reorder the feed, while "I can only work from India"
+    # should remove listings from it. Both default to off so an existing profile keeps
+    # its current feed until the user asks for the constraint.
+    requires_india_work_eligibility: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_required_experience_years: Mapped[float | None] = mapped_column(Float, default=None)
+
+    # Soft preferences: these move a listing up or down, never out.
+    preferred_companies: Mapped[list[str]] = mapped_column(default=list)
+    preferred_industries: Mapped[list[str]] = mapped_column(default=list)
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
 
@@ -822,3 +835,27 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, index=True)
 
     __table_args__ = (Index("ix_audit_entity", "entity_type", "entity_id"),)
+
+
+class SavedSearch(Base):
+    """A named set of feed criteria, plus the watermark for "new since last run".
+
+    ``last_run_at`` is what makes the digest honest: new matches are the ones discovered
+    after the user last looked at this search, not the ones discovered today. A job
+    imported today may have been posted weeks ago, and the reverse is also true, so the
+    watermark is compared against ``discovered_at`` rather than ``posted_at``.
+    """
+
+    __tablename__ = "saved_search"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("candidate_profile.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    criteria: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    last_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (UniqueConstraint("profile_id", "name", name="uq_saved_search_profile_name"),)

@@ -80,6 +80,9 @@ class StubClient:
     def list_resumes(self) -> dict:
         return {"items": [], "total": 0, "limit": 25, "offset": 0}
 
+    def list_searches(self) -> list:
+        return []
+
     def get_profile(self) -> dict:
         return {
             "id": 1,
@@ -178,6 +181,59 @@ class StubClient:
     def audit_logs(self, limit: int = 50, offset: int = 0, action: str | None = None) -> dict:
         return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
+    def get_platform(self, key: str) -> dict:
+        return {
+            "key": key,
+            "display_name": "LinkedIn" if key == "linkedin" else key.title(),
+            "tagline": "Import-only.",
+            "homepage": "https://www.linkedin.com/jobs",
+            "search_url_template": "https://www.linkedin.com/jobs/search/?keywords={query}",
+            "how_jobs_arrive": "You bring listings here by URL or CSV. Section 8.2 applies.",
+            "notes": ["Alert emails can be ingested."],
+            "source_count": 1,
+            "discovery_source_count": 0,
+            "jobs_stored": 0,
+            "applications": 0,
+            "supports_automated_discovery": False,
+            "supports_automated_submission": False,
+            "actions": [
+                {
+                    "key": "automated_discovery",
+                    "label": "Fetch new jobs automatically",
+                    "description": "Not available: its terms prohibit automated access.",
+                    "available": False,
+                },
+                {
+                    "key": "automated_submission",
+                    "label": "Submit the application for you",
+                    "description": "Never available on any platform.",
+                    "available": False,
+                },
+                {
+                    "key": "import_url",
+                    "label": "Add a saved job by URL",
+                    "description": "Paste a listing you found yourself.",
+                    "available": True,
+                },
+            ],
+            "sources": [
+                {
+                    "source": "linkedin",
+                    "display_name": "LinkedIn",
+                    "enabled": True,
+                    "capabilities": _CAPS,
+                    "effective_capabilities": _CAPS,
+                    "policy_basis": "User Agreement s.8.2 prohibits bots and scrapers.",
+                    "limitations": ["No jobseeker search API."],
+                    "last_run_at": None,
+                    "last_error": "",
+                    "jobs_stored": 0,
+                }
+            ],
+            "jobs_by_status": {},
+            "applications_by_status": {},
+        }
+
     def duplication_metrics(self, suspect_limit: int = 25) -> dict:
         return {
             "jobs_total": 0,
@@ -201,6 +257,14 @@ class StubClient:
         }
 
 
+_CAPS: dict = {
+    "manual_import_enabled": True,
+    "authorized_discovery_enabled": False,
+    "browser_assistance_enabled": True,
+    "automated_submission_enabled": False,
+}
+
+
 @pytest.fixture
 def stub_pages(monkeypatch: pytest.MonkeyPatch) -> StubClient:
     """Point every page at the stub client."""
@@ -218,6 +282,7 @@ def stub_pages(monkeypatch: pytest.MonkeyPatch) -> StubClient:
         "diagnostics_page",
         "job_detail_page",
         "resume_page",
+        "platform_page",
     ):
         page = __import__(f"ui.views.{module}", fromlist=["render"])
         monkeypatch.setattr(page, "get_client", lambda: stub, raising=False)
@@ -721,3 +786,102 @@ def test_the_job_detail_page_reports_confidence_and_coverage(
     assert "60%" in text
     assert "Why this confidence level" in text
     assert "stated no location" in text
+
+
+# --------------------------------------------------------------------------------------
+# Platform assistant pages
+# --------------------------------------------------------------------------------------
+
+
+def _render_platform(key: str) -> AppTest:
+    script = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(PROJECT_ROOT)!r})\n"
+        "from ui.views import platform_page\n"
+        f"platform_page.render({key!r})\n"
+    )
+    app = AppTest.from_string(script)
+    app.run(timeout=40)
+    return app
+
+
+@pytest.mark.parametrize("key", ["naukri", "linkedin", "indeed", "wellfound", "ats"])
+def test_every_platform_page_renders(stub_pages: StubClient, key: str) -> None:
+    app = _render_platform(key)
+    assert not app.exception
+
+
+def test_a_platform_page_states_how_jobs_arrive_and_what_is_unavailable(
+    stub_pages: StubClient,
+) -> None:
+    app = _render_platform("linkedin")
+    assert not app.exception
+    text = _messages(app)
+    assert "How jobs get in" in text
+    assert "8.2" in text, "the policy basis must reach the user, not just the docs"
+    assert "import-only by policy" in text, "an honest label, not a missing feature"
+    assert "Never available on any platform" in text
+
+
+def test_a_platform_page_with_no_jobs_shows_an_empty_state_not_a_fake_count(
+    stub_pages: StubClient,
+) -> None:
+    app = _render_platform("naukri")
+    assert not app.exception
+    text = _messages(app)
+    assert "Nothing stored from this platform yet" in text
+    assert "No applications prepared for this platform yet" in text
+
+
+# --------------------------------------------------------------------------------------
+# Saved searches
+# --------------------------------------------------------------------------------------
+
+
+def test_saved_searches_shows_an_empty_state_and_no_crash(stub_pages: StubClient) -> None:
+    app = _render("searches_page")
+    assert not app.exception
+    text = _messages(app)
+    assert "No saved searches yet" in text
+
+
+def test_saved_searches_states_that_nothing_runs_in_the_background(
+    stub_pages: StubClient,
+) -> None:
+    """The page must not imply alerts arrive on their own; there is no background worker."""
+    app = _render("searches_page")
+    assert not app.exception
+    assert "background" in _messages(app).lower()
+
+
+def test_the_saved_search_inputs_are_wrapped_in_a_form() -> None:
+    """A text input commits on blur, so a bare button needs two clicks to register a value.
+
+    Asserted structurally rather than through ``AppTest.button``, which lists form-submit
+    buttons alongside plain ones in this Streamlit version and so cannot tell them apart.
+    """
+    import ast
+
+    source = (PROJECT_ROOT / "ui" / "views" / "searches_page.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    submit_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "form_submit_button"
+    ]
+    plain_buttons_with_save = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "button"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and "Save" in str(node.args[0].value)
+    ]
+    assert submit_calls, "the create form must submit through st.form_submit_button"
+    assert not plain_buttons_with_save, (
+        "a plain st.button next to a text input needs two clicks to save"
+    )

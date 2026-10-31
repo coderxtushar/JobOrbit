@@ -173,9 +173,23 @@ def parse_experience(raw: str) -> tuple[float | None, float | None]:
     text = (raw or "").lower()
     if not text.strip():
         return None, None
+
+    # "under a year" must be read before the generic single-number branch below, which
+    # would otherwise see the 1 in "less than 1 year" and report a one-year floor — the
+    # opposite of what the listing says, and enough to filter the job out for a fresher.
+    upper_bound_only = re.search(
+        r"\b(?:less than|under|below|up to|at most|<)\s*(\d{1,2}(?:\.\d)?)\s*(?:years?|yrs?)",
+        text,
+    )
+    if upper_bound_only:
+        return 0.0, float(upper_bound_only.group(1))
+
     if re.search(
         r"\b(freshers?|fresh graduates?|no (?:prior )?experience|entry[\s-]?level|"
-        r"0\s*(?:-|to)?\s*(?:0|1)?\s*yr|graduate trainee|trainee)\b",
+        r"0\s*(?:-|to)?\s*(?:0|1)?\s*yr|graduate trainee|trainee|"
+        r"new grad(?:uate)?s?|recent grad(?:uate)?s?|university grad(?:uate)?s?|"
+        r"college grad(?:uate)?s?|campus (?:hire|recruitment|placement)|apprentice(?:ship)?|"
+        r"graduate engineer trainee|g\.?e\.?t\.?)\b",
         text,
     ):
         return 0.0, None

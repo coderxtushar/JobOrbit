@@ -20,6 +20,12 @@ from app.db.repositories.jobs import JobQuery, JobRepository
 from app.db.repositories.matches import MatchRepository
 from app.db.repositories.profile import ProfileRepository
 from app.db.repositories.resumes import ResumeRepository, ResumeVariantRepository
+from app.db.repositories.searches import (
+    DigestResult,
+    SavedSearchRepository,
+    UnknownCriterionError,
+    criteria_from_query,
+)
 from app.db.repositories.sources import (
     AuditRepository,
     ImportRunRepository,
@@ -31,6 +37,7 @@ __all__ = [
     "ApplicationRepository",
     "AuditRepository",
     "BatchRunRepository",
+    "DigestResult",
     "DuplicateApplicationError",
     "ImportRunRepository",
     "InboxEntry",
@@ -38,6 +45,9 @@ __all__ = [
     "JobRepository",
     "MatchRepository",
     "ProfileRepository",
+    "SavedSearchRepository",
+    "UnknownCriterionError",
+    "criteria_from_query",
     "ResumeRepository",
     "ResumeVariantRepository",
     "SavedAnswerRepository",

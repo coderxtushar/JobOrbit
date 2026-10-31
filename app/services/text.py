@@ -178,36 +178,242 @@ def normalize_company(value: str) -> str:
     return base or normalize_text(value)
 
 
+#: Indian place names a listing might use, folded to one spelling so a candidate's
+#: preference matches whichever the employer wrote. Both directions occur in real data:
+#: boards publish "Bangalore" and "Bengaluru" for the same office.
+_INDIA_PLACE_ALIASES = {
+    "bangalore": "bengaluru",
+    "bangalore urban": "bengaluru",
+    "bombay": "mumbai",
+    "calcutta": "kolkata",
+    "madras": "chennai",
+    "gurgaon": "gurugram",
+    "new delhi": "delhi",
+    "delhi ncr": "delhi",
+    "ncr": "delhi",
+    "national capital region": "delhi",
+    "trivandrum": "thiruvananthapuram",
+    "pondicherry": "puducherry",
+    "cochin": "kochi",
+    "mysore": "mysuru",
+    "vizag": "visakhapatnam",
+    "vishakhapatnam": "visakhapatnam",
+    "baroda": "vadodara",
+    "poona": "pune",
+    "secunderabad": "hyderabad",
+    "guragon": "gurugram",
+}
+
+_REMOTE_ALIASES = {
+    "work from home": "remote",
+    "anywhere": "remote",
+    "wfh": "remote",
+    "remote india": "remote, india",
+}
+
+#: Indian states, union territories and the major metros, used to decide whether a listing
+#: is in India when the country itself is not written out. Boards frequently publish
+#: "Pune, Maharashtra" or bare "Bengaluru" with no country at all.
+INDIA_REGIONS = frozenset(
+    {
+        "india",
+        "bharat",
+        "andhra pradesh",
+        "arunachal pradesh",
+        "assam",
+        "bihar",
+        "chhattisgarh",
+        "goa",
+        "gujarat",
+        "haryana",
+        "himachal pradesh",
+        "jharkhand",
+        "karnataka",
+        "kerala",
+        "madhya pradesh",
+        "maharashtra",
+        "manipur",
+        "meghalaya",
+        "mizoram",
+        "nagaland",
+        "odisha",
+        "orissa",
+        "punjab",
+        "rajasthan",
+        "sikkim",
+        "tamil nadu",
+        "telangana",
+        "tripura",
+        "uttar pradesh",
+        "uttarakhand",
+        "west bengal",
+        "chandigarh",
+        "delhi",
+        "jammu and kashmir",
+        "ladakh",
+        "lakshadweep",
+        "puducherry",
+    }
+)
+
+INDIA_CITIES = frozenset(
+    {
+        "bengaluru",
+        "mumbai",
+        "navi mumbai",
+        "thane",
+        "delhi",
+        "gurugram",
+        "noida",
+        "greater noida",
+        "faridabad",
+        "ghaziabad",
+        "hyderabad",
+        "pune",
+        "chennai",
+        "kolkata",
+        "ahmedabad",
+        "jaipur",
+        "indore",
+        "kochi",
+        "coimbatore",
+        "thiruvananthapuram",
+        "chandigarh",
+        "mohali",
+        "bhubaneswar",
+        "nagpur",
+        "lucknow",
+        "mysuru",
+        "visakhapatnam",
+        "vadodara",
+        "surat",
+        "mangaluru",
+        "mangalore",
+        "trichy",
+        "tiruchirappalli",
+        "madurai",
+        "nashik",
+        "vijayawada",
+        "kanpur",
+        "patna",
+        "guwahati",
+        "dehradun",
+        "jodhpur",
+        "raipur",
+        "ranchi",
+        "goa",
+    }
+)
+
+
 def normalize_location(value: str) -> str:
     """Normalize a location string and fold common Indian city aliases.
 
     The split on separators happens before :func:`normalize_text`, because that function
     strips punctuation; normalizing first would merge "Bengaluru, Karnataka, India" into a
     single token and break comparison against "Bengaluru".
+
+    Parentheses count as separators because boards write both "Remote - India" and
+    "Remote (India)" for the same arrangement, and a bare ``in`` segment is folded to
+    ``india`` only when another segment precedes it: ISO-2 country codes appear as the last
+    part of "Pune, Maharashtra, IN", where leaving them unfolded means a candidate whose
+    preference says "India" matches nothing.
     """
     if not value or not value.strip():
         return ""
-    aliases = {
-        "bangalore": "bengaluru",
-        "bombay": "mumbai",
-        "calcutta": "kolkata",
-        "madras": "chennai",
-        "gurgaon": "gurugram",
-        "new delhi": "delhi",
-        "delhi ncr": "delhi",
-        "ncr": "delhi",
-        "trivandrum": "thiruvananthapuram",
-        "pondicherry": "puducherry",
-        "work from home": "remote",
-        "anywhere": "remote",
-        "wfh": "remote",
-    }
     parts: list[str] = []
-    for chunk in re.split(r"[,;|/]|\s+-\s+", value):
+    for chunk in re.split(r"[,;|/()\[\]]|\s+-\s+", value):
         normalized = normalize_text(chunk).strip(" .")
-        if normalized:
-            parts.append(aliases.get(normalized, normalized))
+        if not normalized:
+            continue
+        normalized = _REMOTE_ALIASES.get(
+            normalized, _INDIA_PLACE_ALIASES.get(normalized, normalized)
+        )
+        if normalized == "in" and parts:
+            normalized = "india"
+        parts.extend(piece.strip() for piece in normalized.split(",") if piece.strip())
     return ", ".join(dict.fromkeys(parts))
+
+
+def is_india_location(value: str) -> bool:
+    """True when a location names an Indian city, state, union territory or the country."""
+    if not value or not value.strip():
+        return False
+    segments = {part.strip() for part in normalize_location(value).split(",") if part.strip()}
+    return bool(segments & (INDIA_REGIONS | INDIA_CITIES))
+
+
+#: Phrases employers use to fence a remote role to one country or region. Matched against
+#: the location field and the description, because the restriction is written in whichever
+#: the employer chose: Remote OK publishes it in the location, Ashby boards in the body.
+_REMOTE_FENCE = re.compile(
+    r"(?:remote[^.\n]{0,40}?\b(?:only|based|within|in)\b|"
+    r"\b(?:must|required to)\s+(?:be|reside|live|work)[^.\n]{0,40}?\bin\b|"
+    r"\beligible to work\b|\bauthoriz(?:ed|ation) to work\b)[^.\n]{0,60}",
+    re.IGNORECASE,
+)
+
+_INDIA_WORDS = re.compile(r"\b(?:india|bharat|ind)\b", re.IGNORECASE)
+
+#: Region tokens that fence a role when they appear as a segment of the location, e.g.
+#: "Remote - EMEA". Deliberately a closed list rather than "any trailing word", because
+#: boards also append departments ("Remote - Engineering"), which are not restrictions.
+_NON_INDIA_REGIONS = frozenset(
+    {
+        "emea",
+        "apac",
+        "latam",
+        "amer",
+        "americas",
+        "us",
+        "usa",
+        "united states",
+        "eu",
+        "europe",
+        "uk",
+        "united kingdom",
+        "canada",
+        "australia",
+        "germany",
+        "france",
+        "singapore",
+        "brazil",
+        "mexico",
+        "japan",
+        "poland",
+        "spain",
+        "netherlands",
+        "ireland",
+        "philippines",
+    }
+)
+
+
+def remote_scope(location: str, description: str = "") -> str:
+    """Classify a remote listing as ``india``, ``elsewhere`` or ``unstated``.
+
+    A remote role is not automatically open to an India-based candidate: boards publish
+    "Remote (US only)" and "Remote - EMEA" in the same field as plain "Remote". Treating
+    all three alike credits a candidate's "Remote" preference for a role they cannot hold,
+    which is a false positive the location score cannot otherwise catch.
+
+    ``unstated`` is returned when no fence is written, and is deliberately *not* read as a
+    restriction — most employers simply omit it, and guessing would discard real matches.
+    """
+    if is_india_location(location):
+        return "india"
+
+    segments = {part.strip() for part in normalize_location(location).split(",") if part.strip()}
+    if segments & _NON_INDIA_REGIONS:
+        return "elsewhere"
+
+    haystack = f"{location}\n{description}"
+    fences = _REMOTE_FENCE.findall(haystack)
+    if not fences:
+        return "unstated"
+    if any(_INDIA_WORDS.search(fence) for fence in fences):
+        return "india"
+    return "elsewhere"
 
 
 def tokens(value: str) -> set[str]:

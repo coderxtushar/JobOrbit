@@ -15,8 +15,10 @@ from app.api.routes import (
     batches,
     health,
     jobs,
+    platforms,
     profile,
     resumes,
+    searches,
     sources,
 )
 from app.config import Settings, get_settings
@@ -91,6 +93,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(applications.router)
     app.include_router(batches.router)
     app.include_router(answers.router)
+    app.include_router(platforms.router)
+    app.include_router(searches.router)
     app.include_router(sources.router)
     return app
 

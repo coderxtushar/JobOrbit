@@ -30,19 +30,26 @@ class ApiClient:
     base_url: str
     token: str = ""
     timeout: int = DEFAULT_TIMEOUT
+    demo_session: str = ""
 
     @classmethod
-    def from_env(cls) -> ApiClient:
+    def from_env(cls, demo_session: str = "") -> ApiClient:
         host = os.environ.get("JA_API_HOST", "127.0.0.1")
         port = os.environ.get("JA_API_PORT", "8000")
         return cls(
             base_url=os.environ.get("JA_API_BASE_URL", f"http://{host}:{port}"),
             token=os.environ.get("JA_API_TOKEN", ""),
+            demo_session=demo_session,
         )
 
     @property
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        headers: dict[str, str] = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        if self.demo_session:
+            headers["X-Demo-Session"] = self.demo_session
+        return headers
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         url = f"{self.base_url.rstrip('/')}{path}"
@@ -89,6 +96,12 @@ class ApiClient:
 
     def diagnostics(self) -> dict:
         return self._request("GET", "/api/diagnostics")
+
+    def list_platforms(self) -> list[dict]:
+        return self._request("GET", "/api/platforms")
+
+    def get_platform(self, key: str) -> dict:
+        return self._request("GET", f"/api/platforms/{key}")
 
     def metrics(self) -> dict:
         return self._request("GET", "/api/metrics")
@@ -246,6 +259,23 @@ class ApiClient:
 
     def delete_answer(self, question_key: str) -> None:
         self._request("DELETE", f"/api/answers/{question_key}")
+
+    # ---------------- saved searches ----------------
+
+    def list_searches(self) -> list:
+        return self._request("GET", "/api/searches") or []
+
+    def create_search(self, name: str, criteria: dict) -> dict:
+        return self._request("POST", "/api/searches", json={"name": name, "criteria": criteria})
+
+    def delete_search(self, search_id: int) -> None:
+        self._request("DELETE", f"/api/searches/{search_id}")
+
+    def preview_search(self, search_id: int, limit: int = 50) -> dict:
+        return self._request("GET", f"/api/searches/{search_id}/preview", params={"limit": limit})
+
+    def run_search(self, search_id: int, limit: int = 50) -> dict:
+        return self._request("POST", f"/api/searches/{search_id}/run", params={"limit": limit})
 
     # ---------------- sources ----------------
 

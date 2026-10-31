@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
-from app.api.deps import AppSettings, Authorized, DbSession, Profile
+from app.api.deps import AppSettings, Authorized, DbSession, Profile, refuse_in_demo_mode
 from app.api.errors import ApiError
 from app.db.models import ImportRun, ImportStatus, JobStatus, SourceName, utcnow
 from app.db.repositories import (
@@ -46,7 +46,7 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Authorized])
 MAX_IMPORT_FILE_BYTES = 8 * 1024 * 1024
 
 
-def _to_read(job, session, profile_id: int, *, detail: bool = False) -> JobRead:
+def to_job_read(job, session, profile_id: int, *, detail: bool = False) -> JobRead:
     match = MatchRepository(session).get_for_job(job.id, profile_id)
     has_application = ApplicationRepository(session).find_for_job(job.id, profile_id) is not None
     model_class = JobDetail if detail else JobRead
@@ -85,7 +85,10 @@ def _summary(report) -> ImportSummary:
     status_code=status.HTTP_201_CREATED,
     summary="Import job records as JSON",
 )
-def import_jobs(payload: JobImportRequest, session: DbSession, profile: Profile) -> ImportSummary:
+def import_jobs(
+    payload: JobImportRequest, session: DbSession, profile: Profile, settings: AppSettings
+) -> ImportSummary:
+    refuse_in_demo_mode(settings, "job_import")
     grouped: dict[SourceName, list] = {}
     for record in payload.records:
         grouped.setdefault(record.source, []).append(record)
@@ -113,6 +116,7 @@ def import_jobs_csv(
     file: UploadFile = File(..., description="CSV, TSV or JSON export of job listings"),
     source: SourceName = Form(SourceName.CSV),
 ) -> ImportSummary:
+    refuse_in_demo_mode(settings, "job_import")
     """Parse an uploaded export file and ingest it.
 
     Column names are matched case-insensitively against a synonym table, so exports from
@@ -167,6 +171,7 @@ def discover_jobs(
     ``SKIPPED_UNSUPPORTED`` import run carrying the policy reason, so the Diagnostics page
     can explain exactly why nothing was fetched. Nothing is scraped and nothing is faked.
     """
+    refuse_in_demo_mode(settings, "discovery")
     requested = payload.sources or list(SourceName)
     configs = {config.source: config for config in SourceConfigRepository(session).list_all()}
     runs = ImportRunRepository(session)
@@ -301,7 +306,7 @@ def list_jobs(
     )
     repository = JobRepository(session)
     return Page(
-        items=[_to_read(job, session, profile.id) for job in repository.list(query)],
+        items=[to_job_read(job, session, profile.id) for job in repository.list(query)],
         total=repository.count(query),
         limit=limit,
         offset=offset,
@@ -313,7 +318,7 @@ def read_job(job_id: int, session: DbSession, profile: Profile) -> JobDetail:
     job = JobRepository(session).get(job_id)
     if job is None:
         raise ApiError("not_found", f"job {job_id} was not found", status.HTTP_404_NOT_FOUND)
-    result = _to_read(job, session, profile.id, detail=True)
+    result = to_job_read(job, session, profile.id, detail=True)
     assert isinstance(result, JobDetail)
     return result
 

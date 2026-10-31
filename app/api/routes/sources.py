@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import AppSettings, Authorized, DbSession, Profile
+from app.api.deps import AppSettings, Authorized, DbSession, Profile, refuse_in_demo_mode
 from app.api.errors import ApiError
 from app.db.models import SourceConfiguration, SourceName
 from app.db.repositories import (
@@ -91,6 +91,7 @@ def update_source(
     A request to enable something the adapter does not declare is rejected with the policy
     reason, rather than accepted and silently ignored.
     """
+    refuse_in_demo_mode(settings, "source_config")
     try:
         adapter = get_adapter(source, settings)
     except KeyError as exc:
