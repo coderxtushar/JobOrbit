@@ -40,6 +40,19 @@ def render() -> None:
     if header[0].button("Score all jobs", type="primary", use_container_width=True):
         try:
             report = client.score(rescore_all=True)
+            # One request is bounded, so a full rescore is driven in pages until the
+            # server reports nothing left. Without this a database larger than one batch
+            # re-scored the same first page on every press and never finished.
+            totals = dict(report)
+            offset = report["scored"]
+            while report.get("remaining") and report["scored"]:
+                report = client.score(rescore_all=True, offset=offset)
+                offset += report["scored"]
+                for key in ("scored", "filtered_out", "high", "review", "low"):
+                    totals[key] += report[key]
+                totals["failures"] = totals["failures"] + report["failures"]
+            totals["remaining"] = report.get("remaining", 0)
+            report = totals
         except ApiClientError as exc:
             api_error(exc)
         else:
@@ -48,6 +61,12 @@ def render() -> None:
                 f"{report['high']} high, {report['review']} worth a look, {report['low']} low. "
                 f"{report['filtered_out']} were excluded by your filters."
             )
+            if report.get("remaining"):
+                st.info(
+                    f"{report['remaining']} job(s) are still unscored — one run scores at most "
+                    "2000 so a single request stays predictable. Press the button again to "
+                    "continue."
+                )
             for failure in report["failures"]:
                 st.warning(failure)
     if header[1].button("Score new only", use_container_width=True):
@@ -57,6 +76,10 @@ def render() -> None:
             api_error(exc)
         else:
             st.success(f"Scored {report['scored']} job(s).")
+            if report.get("remaining"):
+                st.info(
+                    f"{report['remaining']} job(s) are still unscored. Press again to continue."
+                )
 
     with st.expander("Search and filters", expanded=True):
         row = st.columns([3, 2, 2])

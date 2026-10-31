@@ -179,6 +179,7 @@ class ScoreRequest(BaseModel):
 
     job_ids: list[int] | None = None
     rescore_all: bool = False
+    offset: int = Field(default=0, ge=0)
 
 
 class ScoreSummary(BaseModel):
@@ -187,6 +188,7 @@ class ScoreSummary(BaseModel):
     high: int
     review: int
     low: int
+    remaining: int = 0
     scorer: str
     failures: list[str] = Field(default_factory=list)
 

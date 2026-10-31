@@ -14,6 +14,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 import requests
+from pydantic import ValidationError
+
+from app.schemas.job import RawJobRecord
 
 USER_AGENT = "job-search-assistant/1.0 (personal jobseeker tool; one user)"
 
@@ -22,6 +25,46 @@ USER_AGENT = "job-search-assistant/1.0 (personal jobseeker tool; one user)"
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 _MAX_BACKOFF_SECONDS = 8.0
+
+#: Display fields whose length limit is a storage detail, not a correctness requirement.
+#: ``url`` is deliberately absent: a clipped URL is a broken link, so an over-long URL
+#: skips that one posting instead.
+_CLIPPED_FIELDS: dict[str, int] = {
+    "external_id": 300,
+    "title": 400,
+    "company": 300,
+    "location": 300,
+    "salary_raw": 200,
+    "experience_raw": 200,
+}
+
+
+def build_record(**fields: Any) -> RawJobRecord | None:
+    """Build one record, clipping over-long display fields, or ``None`` if it is unusable.
+
+    A board occasionally carries a single pathological posting — Greenhouse's databricks
+    board lists one role whose location is a 300-plus character list of US states. Letting
+    that raise discarded the *entire* company board, losing every other posting from it,
+    because a parse failure is reported per board rather than per row. Clipping the display
+    fields removes that cause, and returning ``None`` keeps any remaining surprise confined
+    to the one posting that caused it.
+    """
+    for name, limit in _CLIPPED_FIELDS.items():
+        value = fields.get(name)
+        if isinstance(value, str) and len(value) > limit:
+            fields[name] = value[:limit].rstrip()
+    try:
+        return RawJobRecord(**fields)
+    except ValidationError:
+        return None
+
+
+def usable_records(
+    records: list[RawJobRecord | None], skipped: int
+) -> tuple[list[RawJobRecord], int]:
+    """Drop the postings :func:`build_record` could not build, counting them as skipped."""
+    usable = [record for record in records if record is not None]
+    return usable, skipped + len(records) - len(usable)
 
 
 @dataclass(slots=True)

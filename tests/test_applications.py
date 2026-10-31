@@ -554,3 +554,45 @@ def test_a_transition_to_the_same_status_is_a_no_op(
         application, TransitionRequest(ApplicationStatus.READY_FOR_REVIEW)
     )
     assert len(application.events) == before
+
+
+def test_a_cover_letter_does_not_end_a_clause_mid_phrase(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """Regression: a real letter read "...multi-agent workflow with 5+ ."
+
+    The project description was cut on character count alone, so a dangling quantifier was
+    sent to the employer followed by a full stop.
+    """
+    from app.db.repositories import ProfileRepository
+    from app.services.application_prep import _clause, generate_cover_letter
+
+    ProfileRepository(session).update(
+        profile,
+        {
+            "projects": [
+                {
+                    "name": "BrandBot AI Agent",
+                    "description": (
+                        "Autonomous LinkedIn AI agent using LangChain, LangGraph and Google "
+                        "Gemini for brand analysis, trend research and content creation; "
+                        "multi-agent workflow with 5+ specialised agents"
+                    ),
+                }
+            ]
+        },
+    )
+    session.flush()
+    job = persist_job(
+        session,
+        make_record(
+            external_id="CL-1",
+            title="Backend Developer",
+            company="Acme Systems",
+            required_skills=["python"],
+        ),
+    )
+    text = generate_cover_letter(job, profile, ["python"])[0]
+    assert "5+ ." not in text
+    assert " ." not in text, text
+    assert _clause("ends with a trailing quantifier 5+ and more text here", limit=38)[-1] != "+"

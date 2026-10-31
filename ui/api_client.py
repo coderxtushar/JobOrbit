@@ -96,6 +96,11 @@ class ApiClient:
     def estimated_metrics(self) -> dict:
         return self._request("GET", "/api/metrics/estimated")
 
+    def duplication_metrics(self, suspect_limit: int = 25) -> dict:
+        return self._request(
+            "GET", "/api/metrics/duplication", params={"suspect_limit": suspect_limit}
+        )
+
     def audit_logs(self, limit: int = 50, offset: int = 0, action: str | None = None) -> dict:
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if action:
@@ -159,8 +164,10 @@ class ApiClient:
             payload["sources"] = sources
         return self._request("POST", "/api/jobs/discover", json=payload)
 
-    def score(self, job_ids: list[int] | None = None, rescore_all: bool = False) -> dict:
-        payload: dict[str, Any] = {"rescore_all": rescore_all}
+    def score(
+        self, job_ids: list[int] | None = None, rescore_all: bool = False, offset: int = 0
+    ) -> dict:
+        payload: dict[str, Any] = {"rescore_all": rescore_all, "offset": offset}
         if job_ids:
             payload["job_ids"] = job_ids
         return self._request("POST", "/api/jobs/score", json=payload)

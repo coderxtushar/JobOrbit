@@ -1,56 +1,62 @@
 {
  "_about": {
   "purpose": "Quality gate for tests/test_matching_benchmark.py. The benchmark asserts the current ranker is no worse than every number in 'metrics'. This is a regression gate, not a target.",
-  "dataset": "tests/fixtures/eval_jobs_real.json (version 5, 58 real listings)",
-  "measured_at": "2026-10-29",
-  "regenerate": "Only when a change is intended to move these numbers: run tests/test_matching_benchmark.py::test_report_measured_metrics with -s, read the printed 'current vs baseline' table, and update the values deliberately.",
-  "ceilings": "The dataset contains 7 'relevant' rows, so precision@10 cannot exceed 0.70. Rows labelled adjacent, over_experience_bar, preference_mismatch and edge are excluded from precision and recall, which is why precision@20 is not simply 7/20.",
-  "previous_metrics_caveat": "'previous_metrics' were measured on the ranker before the required/preferred/incidental skill classification, the role-family rule and the description-derived experience bar were added, against dataset version 3. Applying the prose experience bar then revealed that seven rows had been mislabelled 'adjacent' when the project's own 2-year tolerance should exclude them, so versions 4 and 5 relabelled those rows. The aggregate precision figures therefore have different denominators across the two runs and should not be subtracted from each other. The false-positive rate and the per-row facts below are directly comparable."
+  "dataset": "tests/fixtures/eval_jobs_real.json (version 7, 190 real listings, rebuild with `python -m tests.build_eval_dataset`)",
+  "measured_at": "2026-10-30",
+  "regenerate": "Only when a change is intended to move these numbers: run tests/test_matching_benchmark.py::test_report_measured_metrics with -s, read the printed tables, and update the values deliberately.",
+  "recall_is_not_comparable_to_version_5": "Version 5 held 7 'relevant' rows; version 7 holds 66, selected on job family, location and stated experience bar alone - never on whether the candidate's skills match. Recall therefore measures something harder and its value fell from 0.8571 to 0.4091 without the ranker getting worse. The precision figures, the false-positive rate and the per-row facts are the comparable numbers.",
+  "why_recall_is_low": "Measured, not assumed: of 66 suitable rows, none is filtered incorrectly, and those that miss the review band sit at 40-60 because skills carry 35% of the weight and almost no listing in this pool publishes a requirements list, so skills are inferred and capped at 75. A listing whose inferred skills the candidate lacks is genuinely a weaker match, so this was left alone rather than tuned: raising the skills score to chase recall would be tuning against the benchmark and would cost the precision figures below.",
+  "high_confidence_never_fires": "Across all 190 real listings, 0 earn 'high' confidence, because the gate needs a published requirements list and these employers rarely publish one. The label is effectively unreachable on real data and is recorded here so the gap stays visible rather than being mistaken for a healthy distribution."
  },
  "metrics": {
+  "precision_at_10": 1.0,
+  "precision_at_20": 1.0,
+  "false_positive_rate_above_threshold": 0.0,
+  "relevant_recall": 0.4091,
+  "bad_rows_in_high_band": 0.0
+ },
+ "per_family": {
+  "software_general": {"relevant_rows": 21, "relevant_recall": 0.6667, "false_positive_rate": -1.0, "mean_score_relevant": 70.96},
+  "backend_python": {"relevant_rows": 15, "relevant_recall": 0.2, "false_positive_rate": 0.0, "mean_score_relevant": 61.43},
+  "genai_agentic": {"relevant_rows": 18, "relevant_recall": 0.3333, "false_positive_rate": 0.0, "mean_score_relevant": 62.51},
+  "cloud_devops": {"relevant_rows": 7, "relevant_recall": 0.2857, "false_positive_rate": 0.0, "mean_score_relevant": 59.06},
+  "frontend": {"relevant_rows": 5, "relevant_recall": 0.4, "false_positive_rate": -1.0, "mean_score_relevant": 60.52},
+  "non_target": {"relevant_rows": 0, "relevant_recall": -1.0, "false_positive_rate": 0.0, "mean_score_relevant": -1.0}
+ },
+ "per_family_note": "-1.0 means the metric has no rows of that kind and is undefined. software_general and frontend contain no unsuitable rows, so their false-positive rate is undefined rather than perfect. Non-target rows carry no family of their own and only their false-positive rate is meaningful. Every family except software_general has a mean suitable score just below the candidate's own 65 threshold, which is why their recall is low while their false-positive rate is zero.",
+ "confidence_calibration": {
+  "high": {"rows": 0, "judged_rows": 0, "share_suitable": -1.0, "mean_evidence_coverage": -1.0},
+  "medium": {"rows": 153, "judged_rows": 109, "share_suitable": 0.5596, "mean_evidence_coverage": 0.898},
+  "low": {"rows": 37, "judged_rows": 27, "share_suitable": 0.1852, "mean_evidence_coverage": 0.6378}
+ },
+ "confidence_calibration_note": "A medium-confidence row is suitable 56% of the time against 19% for a low-confidence row, and carries higher evidence coverage (0.90 against 0.64). The label therefore carries real information and is worth showing to the user. This is the check that would fail if confidence were decorative.",
+ "previous_metrics": {
   "precision_at_10": 0.6,
   "precision_at_20": 0.3684,
   "false_positive_rate_above_threshold": 0.0,
   "relevant_recall": 0.8571,
   "bad_rows_in_high_band": 0.0
  },
- "previous_metrics": {
-  "precision_at_10": 0.6,
-  "precision_at_20": 0.35,
-  "false_positive_rate_above_threshold": 0.0303,
-  "relevant_recall": 0.8571,
-  "bad_rows_in_high_band": 0.0
- },
  "per_row_before_after": [
   {
-   "listing": "Software Engineer - Backend @ sardine (India, states 7+ years)",
-   "before": "85.7, high band, ranked 1st of all eligible rows",
-   "after": "filtered out, reason: states in its description that it requires at least 7 years"
+   "listing": "Software Engineer - Python @ Bosch (experienceLevel 'Associate', text asks for 3 years)",
+   "before": "eligible: the structured field normalised 'Associate' to 1 year and masked the 3 years the text states",
+   "after": "filtered out with the 3-year bar quoted; the filter now enforces the higher of the two figures the employer gave"
   },
   {
-   "listing": "Software Engineer, AI Product @ Vanta (states 7 years)",
-   "before": "83.2, high band, ranked 2nd",
-   "after": "filtered out with the years quoted"
+   "listing": "Backend Engineer - Python @ Nimbus Systems",
+   "before": "title 25/100 - tied at 42.5 against three target titles and kept the first, whose only shared word was the generic 'engineer', so the generic cap applied",
+   "after": "title 42.5/100 against 'Backend Developer'; a tie now prefers a target sharing a word that says what the role does"
   },
   {
-   "listing": "Software Engineer, Integrations Platform @ Vanta (states 6+ years)",
-   "before": "82.1, high band, ranked 3rd",
-   "after": "filtered out with the years quoted"
+   "listing": "Technical Support Engineer - Tier 1 (control: must not improve)",
+   "before": "title 25/100 via the generic-overlap cap",
+   "after": "title 12/100 via the stronger role-family cap; still below the candidate's threshold"
   },
   {
-   "listing": "Software Engineer, Developer Velocity @ Hex (states 5+ years)",
-   "before": "82.0, high band, ranked 4th",
-   "after": "filtered out with the years quoted"
-  },
-  {
-   "listing": "AI Agent Support Specialist @ Vanta (support role, title contains a profile skill)",
-   "before": "66.8, above the candidate's own 65 threshold, title scored 41/100",
-   "after": "below the threshold; title capped by the role-family rule"
-  },
-  {
-   "listing": "Count of unsuitable or over-bar rows occupying the high band",
-   "before": "4",
-   "after": "0"
+   "listing": "Enterprise Sales Executive (control: must not improve)",
+   "before": "title 0/100",
+   "after": "title 0/100"
   }
  ]
 }

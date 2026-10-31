@@ -107,7 +107,7 @@ def eval_profile(session: Session) -> CandidateProfile:
         profile,
         {
             "full_name": "Tushar Gautam",
-            "email": "tushar.gautam.dev@gmail.com",
+            "email": "candidate@example.com",
             "experience_level": "fresher",
             "years_experience": 0.4,
             "graduation_date": "2026",

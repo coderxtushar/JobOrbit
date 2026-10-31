@@ -9,6 +9,7 @@ from ui.components import (
     api_error,
     get_client,
     local_time,
+    metric_row,
     section_header,
 )
 
@@ -49,6 +50,151 @@ def render() -> None:
             "timestamps_stored_in": "UTC",
         }
     )
+
+    st.divider()
+    section_header(
+        "Cross-source duplication",
+        "How often the same posting arrived from more than one source, and where the "
+        "merge may have gone wrong.",
+    )
+    try:
+        duplication = client.duplication_metrics()
+    except ApiClientError as exc:
+        api_error(exc)
+    else:
+        if duplication["jobs_total"] == 0:
+            st.caption("No jobs stored yet, so there is nothing to measure.")
+        else:
+            metric_row(
+                [
+                    ("Stored jobs", duplication["jobs_total"], "after merging"),
+                    ("Sightings", duplication["sightings_total"], "one per source per job"),
+                    (
+                        "Duplicate rate",
+                        f"{duplication['duplicate_rate'] * 100:.1f}%",
+                        "sightings that merged into an existing job",
+                    ),
+                    (
+                        "Multi-source jobs",
+                        duplication["multi_source_jobs"],
+                        f"{duplication['cross_source_duplicate_rate'] * 100:.1f}% of stored jobs",
+                    ),
+                ]
+            )
+            metric_row(
+                [
+                    (
+                        "Exact duplicates",
+                        duplication["exact_duplicate_sightings"],
+                        "matched on source id or canonical URL",
+                    ),
+                    (
+                        "Fuzzy duplicates",
+                        duplication["fuzzy_duplicate_sightings"],
+                        "matched on the normalized fingerprint",
+                    ),
+                    (
+                        "Possible missed merges",
+                        len(duplication["missed_merge_suspects"]),
+                        "near-identical jobs kept separate",
+                    ),
+                    (
+                        "Possible false merges",
+                        len(duplication["false_merge_suspects"]),
+                        "one job whose sightings disagree",
+                    ),
+                ]
+            )
+            st.caption(
+                f"{duplication['jobs_with_application']} stored job(s) have an application "
+                f"recorded against them, {duplication['multi_source_jobs_with_application']} "
+                "of those on a merged listing. Merging is additive: it never deletes a job, "
+                "a sighting or an application record."
+            )
+
+            if duplication["source_pair_overlaps"]:
+                with st.expander("Which source pairs overlap"):
+                    st.dataframe(
+                        [
+                            {"source pair": pair.replace("+", " + "), "shared jobs": count}
+                            for pair, count in duplication["source_pair_overlaps"].items()
+                        ],
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+
+            if duplication["false_merge_suspects"]:
+                st.warning(
+                    "These jobs merged sightings that disagree about the role. Open each on "
+                    "the Job detail page and check the platforms listed."
+                )
+                st.dataframe(
+                    [
+                        {
+                            "job": suspect["job_id"],
+                            "stored title": suspect["stored_title"],
+                            "titles seen": " | ".join(suspect["observed_titles"]),
+                            "sources": ", ".join(suspect["sources"]),
+                            "why": suspect["reason"],
+                        }
+                        for suspect in duplication["false_merge_suspects"]
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            if duplication["missed_merge_suspects"]:
+                with st.expander(
+                    f"Possible missed merges ({len(duplication['missed_merge_suspects'])})"
+                ):
+                    st.caption(
+                        "Reported, never merged automatically. A company can legitimately "
+                        "post two near-identical roles, so this is a prompt to look, not a "
+                        "verdict."
+                    )
+                    st.dataframe(
+                        [
+                            {
+                                "jobs": " / ".join(str(item) for item in suspect["job_ids"]),
+                                "company": suspect["company"],
+                                "titles": " | ".join(suspect["titles"]),
+                                "title overlap": f"{suspect['title_overlap'] * 100:.0f}%",
+                                "why": suspect["reason"],
+                            }
+                            for suspect in duplication["missed_merge_suspects"]
+                        ],
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+
+            if duplication["normalization_collisions"]:
+                st.warning(
+                    "Company-name normalization has collapsed names that may belong to "
+                    "different employers, which would merge unrelated jobs."
+                )
+                st.dataframe(
+                    [
+                        {
+                            "normalized to": collision["normalized_company"],
+                            "raw names": " | ".join(collision["raw_companies"]),
+                            "jobs": collision["job_count"],
+                        }
+                        for collision in duplication["normalization_collisions"]
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            elif duplication["jobs_total"]:
+                st.caption(
+                    "No company-name collisions: every normalized employer key maps to names "
+                    "that differ only by a legal suffix."
+                )
+
+            for skipped in duplication["buckets_skipped"]:
+                st.caption(
+                    f"Pair search skipped for {skipped}: the bucket is too large to compare "
+                    "exhaustively in a request."
+                )
 
     st.divider()
     section_header("Audit trail")

@@ -54,6 +54,7 @@ GOOD_LABELS = frozenset({"relevant"})
 BAD_LABELS = frozenset({"irrelevant", "adversarial", "senior", "support"})
 
 _BAND_RANK = {"high": 0, "review": 1, "low": 2}
+_CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 
 
 @dataclass(slots=True)
@@ -61,6 +62,7 @@ class Scored:
     label: str
     expect: str
     why: str
+    job_family: str
     title: str
     company: str
     score: float
@@ -177,6 +179,7 @@ def score_dataset(session: Session, profile: CandidateProfile) -> list[Scored]:
                 label=entry["label"],
                 expect=entry["expect"],
                 why=entry["why"],
+                job_family=entry.get("job_family", "unknown"),
                 title=job.title,
                 company=job.company,
                 score=result.total_score,
@@ -193,9 +196,16 @@ def score_dataset(session: Session, profile: CandidateProfile) -> list[Scored]:
 
 
 def rank(results: list[Scored]) -> list[Scored]:
-    """Order rows the way the job feed does: eligible first, then band, then score."""
+    """Order rows the way the job feed does: eligible, then band, then confidence, then score."""
     eligible = [row for row in results if not row.filtered_out]
-    return sorted(eligible, key=lambda row: (_BAND_RANK.get(row.band, 3), -row.score))
+    return sorted(
+        eligible,
+        key=lambda row: (
+            _BAND_RANK.get(row.band, 3),
+            _CONFIDENCE_RANK.get(row.confidence, 3),
+            -row.score,
+        ),
+    )
 
 
 def precision_at(results: list[Scored], k: int) -> float:
@@ -229,6 +239,56 @@ def relevant_recall(results: list[Scored]) -> float:
     return len(kept) / len(good)
 
 
+def per_family(results: list[Scored]) -> dict[str, dict[str, float]]:
+    """Metrics restricted to each target family's own rows.
+
+    An aggregate number can hide a family that ranks badly, because the largest family
+    dominates it. Non-target rows carry no family of their own, so they are pooled under
+    ``non_target`` where only the false-positive rate is meaningful.
+    """
+    families = sorted({row.job_family for row in results})
+    report: dict[str, dict[str, float]] = {}
+    for family in families:
+        rows = [row for row in results if row.job_family == family]
+        good = [row for row in rows if row.is_good]
+        bad = [row for row in rows if row.is_bad]
+        report[family] = {
+            "rows": float(len(rows)),
+            "relevant_rows": float(len(good)),
+            "unsuitable_rows": float(len(bad)),
+            "relevant_recall": round(relevant_recall(rows), 4) if good else -1.0,
+            "false_positive_rate": round(false_positive_rate(rows, 65.0), 4) if bad else -1.0,
+            "mean_score_relevant": (
+                round(sum(row.score for row in good) / len(good), 2) if good else -1.0
+            ),
+        }
+    return report
+
+
+def confidence_calibration(results: list[Scored]) -> dict[str, dict[str, float]]:
+    """Does a confidence label predict whether the row is actually suitable?
+
+    Calibration is the honest check on the confidence field: if ``high`` confidence rows
+    are no more often suitable than ``low`` confidence rows, the label carries no
+    information and should not be shown to the user as if it did.
+    """
+    report: dict[str, dict[str, float]] = {}
+    for level in ("high", "medium", "low"):
+        rows = [row for row in results if row.confidence == level]
+        judged = [row for row in rows if row.is_good or row.is_bad]
+        report[level] = {
+            "rows": float(len(rows)),
+            "judged_rows": float(len(judged)),
+            "share_suitable": (
+                round(sum(1 for row in judged if row.is_good) / len(judged), 4) if judged else -1.0
+            ),
+            "mean_evidence_coverage": (
+                round(sum(row.evidence_coverage for row in rows) / len(rows), 4) if rows else -1.0
+            ),
+        }
+    return report
+
+
 def measure(results: list[Scored], threshold: float = 65.0) -> dict[str, float]:
     return {
         "precision_at_10": round(precision_at(results, 10), 4),
@@ -260,31 +320,78 @@ def test_the_dataset_covers_every_category_the_benchmark_claims_to_test() -> Non
     labels = {entry["label"] for entry in load_dataset()}
     assert labels == {
         "relevant",
-        "adjacent",
         "senior",
         "support",
         "irrelevant",
         "adversarial",
         "preference_mismatch",
         "over_experience_bar",
-        "edge",
+        "sparse",
+        "location_restricted",
     }
 
 
+def test_the_dataset_covers_every_target_job_family() -> None:
+    """Each family the profile targets needs enough rows for its own metrics to mean anything."""
+    families: dict[str, int] = {}
+    for entry in load_dataset():
+        if entry["label"] == "relevant":
+            families[entry["job_family"]] = families.get(entry["job_family"], 0) + 1
+    assert set(families) == {
+        "software_general",
+        "backend_python",
+        "frontend",
+        "genai_agentic",
+        "cloud_devops",
+    }
+    thin = {family: count for family, count in families.items() if count < 5}
+    assert not thin, f"too few relevant rows to measure these families: {thin}"
+
+
+def test_the_dataset_is_india_and_remote_weighted_for_this_candidate() -> None:
+    relevant = [entry for entry in load_dataset() if entry["label"] == "relevant"]
+    india = [entry for entry in relevant if entry["location_class"] == "india"]
+    reachable = [
+        entry
+        for entry in relevant
+        if entry["location_class"] in {"india", "remote"}
+        or (entry["record"].get("work_arrangement") or "") == "remote"
+    ]
+    assert len(reachable) == len(relevant), (
+        "a row the candidate should apply to must be India-located or remote"
+    )
+    assert india, "the dataset must contain India-located rows the candidate should apply to"
+
+
 def test_every_row_is_a_real_listing_with_recorded_provenance() -> None:
+    publishers = {
+        "ashby",
+        "smartrecruiters",
+        "remoteok",
+        "greenhouse",
+        "lever",
+        "workable",
+        "arbeitnow",
+        "himalayas",
+        "jobicy",
+        "employer_site",
+    }
     for entry in load_dataset():
         provenance = entry["provenance"]
         assert provenance["fetched_from"].startswith("https://")
-        assert provenance["api"] in {"ashby", "smartrecruiters", "remoteok"}
+        assert "example.com" not in provenance["fetched_from"], (
+            "a hand-written listing cannot be evidence that a rule works"
+        )
+        assert provenance["api"] in publishers
         assert entry["why"].strip(), "every label must carry the reason it was assigned"
 
 
 def test_the_dataset_is_large_and_balanced_enough_to_measure(benchmark: list[Scored]) -> None:
     good = [row for row in benchmark if row.is_good]
     bad = [row for row in benchmark if row.is_bad]
-    assert len(benchmark) >= 35
-    assert len(good) >= 7
-    assert len(bad) >= 20
+    assert len(benchmark) >= 150
+    assert len(good) >= 40
+    assert len(bad) >= 60
 
 
 # --------------------------------------------------------------------------------------
@@ -314,25 +421,25 @@ def test_no_unsuitable_listing_clears_the_candidates_own_threshold(
 
 
 def test_precision_at_10_is_no_worse_than_the_baseline(benchmark: list[Scored]) -> None:
-    measured = precision_at(benchmark, 10)
+    measured = measure(benchmark)["precision_at_10"]
     baseline = _baseline()["metrics"]["precision_at_10"]
     assert measured >= baseline, f"precision@10 regressed: {measured} < {baseline}"
 
 
 def test_precision_at_20_is_no_worse_than_the_baseline(benchmark: list[Scored]) -> None:
-    measured = precision_at(benchmark, 20)
+    measured = measure(benchmark)["precision_at_20"]
     baseline = _baseline()["metrics"]["precision_at_20"]
     assert measured >= baseline, f"precision@20 regressed: {measured} < {baseline}"
 
 
 def test_the_false_positive_rate_is_no_worse_than_the_baseline(benchmark: list[Scored]) -> None:
-    measured = false_positive_rate(benchmark, 65.0)
+    measured = measure(benchmark)["false_positive_rate_above_threshold"]
     baseline = _baseline()["metrics"]["false_positive_rate_above_threshold"]
     assert measured <= baseline, f"false-positive rate regressed: {measured} > {baseline}"
 
 
 def test_relevant_recall_is_no_worse_than_the_baseline(benchmark: list[Scored]) -> None:
-    measured = relevant_recall(benchmark)
+    measured = measure(benchmark)["relevant_recall"]
     baseline = _baseline()["metrics"]["relevant_recall"]
     assert measured >= baseline, f"recall regressed: {measured} < {baseline}"
 
@@ -383,12 +490,15 @@ def test_a_listing_with_no_description_cannot_become_a_confident_match(
     benchmark: list[Scored],
 ) -> None:
     """ "Intern, Software Development" has a perfect title and an empty description."""
-    sparse = [row for row in benchmark if row.expect == "sparse_no_description"]
+    sparse = [row for row in benchmark if row.expect == "not_confident"]
     assert sparse, "the dataset must contain a listing with no usable description"
     for row in sparse:
         assert row.band != "high"
         assert row.confidence != "high"
-        assert any("assess" in line or "sparse" in line for line in row.explanation)
+        assert any(
+            "assess" in line or "sparse" in line or "words" in line or "inferred" in line
+            for line in row.explanation
+        ), f"{row.title} gave no reason for its low confidence"
 
 
 def test_every_scored_row_explains_itself(benchmark: list[Scored]) -> None:
@@ -407,6 +517,72 @@ def test_confidence_is_reported_separately_from_the_score(benchmark: list[Scored
     )
 
 
+def test_no_job_family_recommends_an_unsuitable_listing(benchmark: list[Scored]) -> None:
+    """A clean aggregate must not hide one family that recommends the wrong roles."""
+    report = per_family(benchmark)
+    baseline = _baseline()["per_family"]
+    offenders = {
+        family: values["false_positive_rate"]
+        for family, values in report.items()
+        if values["false_positive_rate"] > baseline.get(family, {}).get("false_positive_rate", 0.0)
+    }
+    assert not offenders, f"these families got worse at recommending unsuitable roles: {offenders}"
+
+
+def test_every_target_family_keeps_enough_rows_to_be_measured(benchmark: list[Scored]) -> None:
+    report = per_family(benchmark)
+    for family in (
+        "software_general",
+        "backend_python",
+        "frontend",
+        "genai_agentic",
+        "cloud_devops",
+    ):
+        assert family in report, f"{family} disappeared from the dataset"
+        assert report[family]["relevant_rows"] >= 5, (
+            f"{family} has only {report[family]['relevant_rows']:g} suitable rows, too few to measure"
+        )
+
+
+def test_confidence_predicts_suitability_rather_than_being_decorative(
+    benchmark: list[Scored],
+) -> None:
+    """A confidence label the user is shown must carry information.
+
+    If medium-confidence rows were no more often suitable than low-confidence ones, the
+    label would be noise presented as a judgement, which is exactly what the project's
+    honesty rules forbid.
+    """
+    calibration = confidence_calibration(benchmark)
+    medium, low = calibration["medium"], calibration["low"]
+    assert medium["judged_rows"] >= 20 and low["judged_rows"] >= 10, (
+        "too few judged rows in each bucket for calibration to mean anything"
+    )
+    assert medium["share_suitable"] > low["share_suitable"], (
+        f"medium confidence is no more often suitable ({medium['share_suitable']}) than "
+        f"low ({low['share_suitable']}), so the label carries no information"
+    )
+    assert medium["mean_evidence_coverage"] > low["mean_evidence_coverage"], (
+        "a higher confidence label must rest on more evidence, not less"
+    )
+
+
+def test_high_confidence_is_not_awarded_without_published_requirements(
+    benchmark: list[Scored],
+) -> None:
+    """Records a known gap: no real listing in the dataset reaches high confidence.
+
+    This is asserted rather than left implicit so that a future change which starts
+    awarding 'high' is noticed and justified, instead of quietly relaxing the bar.
+    """
+    high = [row for row in benchmark if row.confidence == "high"]
+    expected = _baseline()["confidence_calibration"]["high"]["rows"]
+    assert float(len(high)) == expected, (
+        f"{len(high)} rows now earn high confidence against a recorded {expected:g}; "
+        "if this is intended, update eval_baseline.json deliberately"
+    )
+
+
 # --------------------------------------------------------------------------------------
 # Reported numbers, printed so a run records what it measured
 # --------------------------------------------------------------------------------------
@@ -419,6 +595,20 @@ def test_report_measured_metrics(benchmark: list[Scored]) -> None:
     for key, value in measured.items():
         before = baseline.get(key)
         print(f"  {key:38s} baseline={before!s:8s} now={value}")
+    print("\n--- per job family ---")
+    for family, values in per_family(benchmark).items():
+        print(
+            f"  {family:18s} rows={values['rows']:5.0f} relevant={values['relevant_rows']:4.0f} "
+            f"recall={values['relevant_recall']:7.4f} fpr={values['false_positive_rate']:7.4f} "
+            f"mean_relevant_score={values['mean_score_relevant']:6.2f}"
+        )
+    print("\n--- confidence calibration ---")
+    for level, values in confidence_calibration(benchmark).items():
+        print(
+            f"  {level:6s} rows={values['rows']:5.0f} judged={values['judged_rows']:5.0f} "
+            f"share_suitable={values['share_suitable']:7.4f} "
+            f"mean_coverage={values['mean_evidence_coverage']:7.4f}"
+        )
     print("\n--- top 15 ranked ---")
     for index, row in enumerate(rank(benchmark)[:15], 1):
         print(

@@ -35,3 +35,11 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Personal documents. A real resume contains the candidate's name, email, phone and
+# address; it must never enter version control even in a private repository.
+*_resume.pdf
+*_resume.docx
+*resume*.pdf
+*resume*.docx
+!tests/fixtures/*.pdf

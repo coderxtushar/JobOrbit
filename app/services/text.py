@@ -294,8 +294,18 @@ def seniority_level(value: str) -> int | None:
     Returning ``None`` matters: a title like "Software Engineer" carries no seniority
     signal, and guessing one would let the filter reject a role that is actually open to
     freshers.
+
+    Trailing ``+`` and ``.`` are stripped before the lookup. :func:`normalize_text` keeps
+    both so that "c++" and "node.js" survive as skills, which left "Staff+ Software
+    Engineer" and "Sr. Controls Software Engineer" as the tokens ``staff+`` and ``sr.`` —
+    neither matched a marker, so both senior roles escaped the seniority filter and reached
+    the review band on real data.
     """
-    found = [_SENIORITY_MARKERS[token] for token in tokens(value) if token in _SENIORITY_MARKERS]
+    found = [
+        _SENIORITY_MARKERS[candidate]
+        for token in tokens(value)
+        if (candidate := token.rstrip("+.")) in _SENIORITY_MARKERS
+    ]
     return max(found) if found else None
 
 

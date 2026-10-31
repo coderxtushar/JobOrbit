@@ -41,9 +41,11 @@ from app.sources.base import (
 )
 from app.sources.http_fetch import (
     BoardFetch,
+    build_record,
     fetch_json,
     parse_epoch_millis,
     parse_iso,
+    usable_records,
 )
 
 logger = get_logger(__name__)
@@ -216,7 +218,7 @@ class GreenhouseAdapter(AtsBoardAdapter):
         jobs = (payload or {}).get("jobs") if isinstance(payload, dict) else None
         if not isinstance(jobs, list):
             raise ValueError("expected an object with a 'jobs' array")
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in jobs:
             if not isinstance(entry, dict):
@@ -237,7 +239,7 @@ class GreenhouseAdapter(AtsBoardAdapter):
                 if isinstance(first, dict):
                     location_name = str(first.get("name", "")).strip()
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("id") or entry.get("internal_job_id") or "").strip()
                     or None,
@@ -260,7 +262,7 @@ class GreenhouseAdapter(AtsBoardAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 class LeverAdapter(AtsBoardAdapter):
@@ -285,7 +287,7 @@ class LeverAdapter(AtsBoardAdapter):
     def parse_board(self, board: str, payload: Any) -> tuple[list[RawJobRecord], int]:
         if not isinstance(payload, list):
             raise ValueError("expected a JSON array of postings")
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in payload:
             if not isinstance(entry, dict):
@@ -302,7 +304,7 @@ class LeverAdapter(AtsBoardAdapter):
             description = str(entry.get("descriptionPlain") or entry.get("description") or "")
             extra = str(entry.get("additionalPlain") or "")
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("id", "")).strip() or None,
                     title=title,
@@ -321,7 +323,7 @@ class LeverAdapter(AtsBoardAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 class WorkableAdapter(AtsBoardAdapter):
@@ -354,7 +356,7 @@ class WorkableAdapter(AtsBoardAdapter):
         if not isinstance(jobs, list):
             raise ValueError("'jobs' was present but was not an array")
         company = str(payload.get("name", "")).strip() or board
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in jobs:
             if not isinstance(entry, dict):
@@ -368,7 +370,7 @@ class WorkableAdapter(AtsBoardAdapter):
                 skipped += 1
                 continue
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("shortcode") or entry.get("code") or "").strip()
                     or None,
@@ -390,7 +392,7 @@ class WorkableAdapter(AtsBoardAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 def _workable_education(entry: dict[str, Any]) -> list[str]:
@@ -467,7 +469,7 @@ class AshbyAdapter(AtsBoardAdapter):
         if not isinstance(jobs, list):
             raise ValueError("'jobs' was present but was not an array")
 
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in jobs:
             if not isinstance(entry, dict):
@@ -480,7 +482,7 @@ class AshbyAdapter(AtsBoardAdapter):
                 continue
             employment = str(entry.get("employmentType", "")).strip()
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("id", "")).strip() or None,
                     title=title,
@@ -500,7 +502,7 @@ class AshbyAdapter(AtsBoardAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 def _ashby_description(entry: dict[str, Any]) -> str:
@@ -581,7 +583,7 @@ class SmartRecruitersAdapter(AtsBoardAdapter):
         if not isinstance(postings, list):
             raise ValueError("'content' was present but was not an array")
 
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in postings:
             if not isinstance(entry, dict):
@@ -604,7 +606,7 @@ class SmartRecruitersAdapter(AtsBoardAdapter):
             if not isinstance(location, dict):
                 location = {}
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=posting_id,
                     title=title,
@@ -625,7 +627,7 @@ class SmartRecruitersAdapter(AtsBoardAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
     def _fetch_description(self, identifier: str, posting_id: str) -> str:
         """Pull one posting's advert text, within the per-run request budget."""

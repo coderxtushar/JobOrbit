@@ -18,7 +18,10 @@ from app.services.matching import (
     band_for,
     score_job,
 )
+from app.services.scoring import ScoringService
 from tests.conftest import make_record, persist_job
+
+_DISTINCT_TITLES = ("payments", "billing", "search", "identity", "messaging")
 
 
 def test_a_well_matched_fresher_job_scores_high(
@@ -479,3 +482,113 @@ def test_full_coverage_still_earns_a_high_band(session: Session, profile: Candid
     assert result.total_score >= 80
     assert result.band == "high"
     assert MINIMUM_COVERAGE_FOR_HIGH < 1.0
+
+
+def test_scoring_new_only_makes_progress_instead_of_rescoring_the_same_jobs(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """Regression: "Score new only" never progressed past the first batch.
+
+    The query listed DISCOVERED, SCORED and FILTERED_OUT, which includes everything
+    already scored, so each call returned the same first page by discovery date. On a
+    7,791-job database that left 5,791 jobs permanently unscored while every response
+    reported success.
+    """
+    service = ScoringService(session)
+    for index in range(5):
+        persist_job(
+            session,
+            make_record(
+                external_id=f"PROG-{index}",
+                title=f"Backend Developer {_DISTINCT_TITLES[index]}",
+                description=f"Build {_DISTINCT_TITLES[index]} services with Python.",
+                url=f"https://jobs.example.com/prog/{index}",
+            ),
+        )
+
+    first = service.score_many(profile)
+    assert first.scored == 5
+    assert first.remaining == 0
+
+    second = service.score_many(profile)
+    assert second.scored == 0, "already-scored jobs must not be returned again"
+
+    persist_job(
+        session,
+        make_record(
+            external_id="PROG-new",
+            title="Python Developer",
+            url="https://jobs.example.com/prog/new",
+        ),
+    )
+    third = service.score_many(profile)
+    assert third.scored == 1, "a newly discovered job must be picked up"
+
+
+def test_rescore_all_still_revisits_every_job(session: Session, profile: CandidateProfile) -> None:
+    service = ScoringService(session)
+    for index in range(3):
+        persist_job(
+            session,
+            make_record(
+                external_id=f"RE-{index}",
+                title=f"Backend Developer {_DISTINCT_TITLES[index]}",
+                description=f"Build {_DISTINCT_TITLES[index]} services with Python.",
+                url=f"https://jobs.example.com/re/{index}",
+            ),
+        )
+    service.score_many(profile)
+    again = service.score_many(profile, rescore_all=True)
+    assert again.scored == 3
+
+
+def test_within_a_band_a_low_confidence_row_ranks_below_a_well_evidenced_one(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """Regression: three rows whose fields were each one character topped the review band.
+
+    They scored 100.0 from the single category that could be assessed (20% coverage, low
+    confidence) and sat above fully-assessed matches at 71-77 on real data. The band gate
+    had already demoted them; ordering inside the band was still score-only.
+    """
+    from app.db.repositories import JobQuery, JobRepository
+
+    content_free = persist_job(
+        session,
+        make_record(
+            external_id="ORD-1",
+            title="z",
+            company="y",
+            location="r",
+            description="",
+            required_skills=[],
+            preferred_skills=[],
+            url="https://jobs.example.com/ord/1",
+        ),
+    )
+    evidenced = persist_job(
+        session,
+        make_record(
+            external_id="ORD-2",
+            title="Backend Developer",
+            company="Acme Systems",
+            location="Bengaluru, India",
+            required_skills=["python", "fastapi", "postgresql"],
+            preferred_skills=["docker"],
+            description=(
+                "Requirements\n- Python\n- FastAPI\n- PostgreSQL\nNice to have\n- Docker\n"
+            ),
+            posted_at=utcnow() - timedelta(days=2),
+            url="https://jobs.example.com/ord/2",
+        ),
+    )
+    ScoringService(session).score_many(profile, job_ids=[content_free.id, evidenced.id])
+    session.flush()
+
+    ordered = JobRepository(session).list(
+        JobQuery(limit=10, sort_by="score", profile_id=profile.id)
+    )
+    positions = {job.id: index for index, job in enumerate(ordered)}
+    assert positions[evidenced.id] < positions[content_free.id], (
+        "a fully-evidenced match must outrank a content-free one in the same band"
+    )
