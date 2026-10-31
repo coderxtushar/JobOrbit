@@ -17,6 +17,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ui.components import require_api  # noqa: E402
+from ui.embedded_api import ensure_api_running  # noqa: E402
 from ui.theme import inject_css  # noqa: E402
 from ui.views import (  # noqa: E402
     applications_page,
@@ -67,10 +68,26 @@ def main() -> None:
 
     choice = st.sidebar.radio("Go to", list(PAGES), key="nav", label_visibility="collapsed")
 
+    # On a single-process host there is no separate API to reach, so start one before the
+    # health check rather than showing "API offline" with no way to act on it. A no-op
+    # when an API is already configured or already listening.
+    api_status = ensure_api_running()
+
     health = require_api()
     if health is None:
         st.sidebar.error("API offline")
+        st.sidebar.caption(f"API: {api_status}")
         return
+
+    if health.get("demo_mode"):
+        st.warning(
+            "**Public demo with sample data.** The candidate, the listings and the "
+            "applications here are fictional, and resume upload is disabled: a shared "
+            "deployment has no per-user login, so one visitor's resume would be readable "
+            "by the next. Run it locally with your own resume — the README has the two "
+            "commands.",
+            icon="🧪",
+        )
 
     st.sidebar.divider()
     st.sidebar.markdown(

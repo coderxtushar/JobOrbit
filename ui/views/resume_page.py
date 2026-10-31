@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui.api_client import ApiClientError
+from ui.api_client import ApiClient, ApiClientError
 from ui.components import (
     api_error,
     empty_state,
@@ -36,9 +36,26 @@ def _csv_to_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _demo_mode(client: ApiClient) -> bool:
+    try:
+        return bool(client.health().get("demo_mode"))
+    except ApiClientError:
+        return False
+
+
 def _upload_section() -> None:
     client = get_client()
     section_header("1. Upload your resume")
+
+    if _demo_mode(client):
+        st.info(
+            "Resume upload is disabled on this public demo. A shared deployment has no "
+            "per-user login, so one visitor's resume would be readable by the next. The "
+            "profile below is sample data; run the app locally to use your own resume.",
+            icon="🧪",
+        )
+        return
+
     st.caption("PDF or DOCX, up to 10 MB. The file is stored privately under `var/resumes`.")
 
     uploaded = st.file_uploader("Resume file", type=["pdf", "docx"], key="resume_upload")

@@ -7,6 +7,8 @@
 !.env.example
 *.pem
 *.key
+# Streamlit Community Cloud reads deployment secrets from here.
+.streamlit/secrets.toml
 
 # Local data: database, uploaded resumes, generated artifacts, logs
 var/

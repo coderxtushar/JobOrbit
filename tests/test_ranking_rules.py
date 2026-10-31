@@ -673,3 +673,55 @@ def test_a_staff_plus_role_is_filtered_for_a_fresher(
     result = score_job(job, profile)
     assert result.filtered_out
     assert any("seniority" in reason for reason in result.filter_reasons), result.filter_reasons
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Application Engineer - Heat Pumps",
+        "Cost Engineering & Benchmarking - MAE",
+        "HVAC Service Engineer",
+    ],
+)
+def test_industrial_and_mechanical_titles_are_not_software_matches(
+    session: Session, profile: CandidateProfile, title: str
+) -> None:
+    """Regression: these reached the review band at 74-76 on a live India discovery run.
+
+    A large engineering employer's titles share the generic role noun, so the only signal
+    separating them from software work is the discipline named alongside it.
+    """
+    job = persist_job(
+        session,
+        make_record(
+            title=title,
+            external_id=f"IND-{abs(hash(title)) % 10000}",
+            location="Bengaluru, India",
+            required_skills=[],
+            preferred_skills=[],
+            description="An engineering role at a large manufacturer.",
+            posted_at=utcnow() - timedelta(days=3),
+        ),
+    )
+    result = score_job(job, profile)
+    assert result.total_score < (profile.minimum_match_score or 65.0), result.category_scores
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Software Development Engineer",
+        "DevOps Engineer",
+        "Site Reliability Engineer",
+        "Platform Engineer",
+        "Cloud Engineer",
+        "IT Application Operations Engineer",
+    ],
+)
+def test_software_and_platform_operations_titles_keep_their_title_credit(
+    session: Session, profile: CandidateProfile, title: str
+) -> None:
+    """The control for the above: "operations" is deliberately not a foreign-family marker."""
+    from app.services.matching import _foreign_families
+
+    assert _foreign_families(title) == set(), title

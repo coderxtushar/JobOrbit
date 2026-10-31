@@ -290,10 +290,29 @@ FOREIGN_ROLE_FAMILIES: dict[str, frozenset[str]] = {
             "audio",
             "rf",
             "bms",
+            "pump",
+            "pumps",
+            "hvac",
+            "refrigeration",
         }
     ),
     "field": frozenset({"field", "implementation", "installation", "deployment"}),
-    "operations": frozenset({"logistics", "warehouse", "procurement", "manufacturing", "shift"}),
+    "operations": frozenset(
+        {
+            "logistics",
+            "warehouse",
+            "procurement",
+            "manufacturing",
+            "shift",
+            # "Cost Engineering & Benchmarking" is industrial engineering. Measured on a live
+            # India discovery run, it and "Application Engineer - Heat Pumps" both reached the
+            # review band at 74-76 because a large engineering employer's titles share the
+            # generic role noun. "operations" itself is deliberately absent: DevOps and
+            # platform-operations roles are software work.
+            "cost",
+            "benchmarking",
+        }
+    ),
     "clinical": frozenset({"nurse", "nursing", "clinical", "medical", "pharmacy"}),
     "education": frozenset({"teacher", "tutor", "lecturer", "faculty", "instructor"}),
 }

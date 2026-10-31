@@ -81,6 +81,55 @@ Then open **http://localhost:8501**. The API docs are at **http://127.0.0.1:8000
 
 ---
 
+## Deploying a public demo
+
+This app normally runs as **two processes** — a FastAPI service and a Streamlit dashboard
+that talks to it only over HTTP. Streamlit Community Cloud runs exactly one process, so a
+plain deployment shows "Cannot reach the API" on every page. Two things close that gap.
+
+**The dashboard starts the API itself when there is nothing to connect to.**
+[`ui/embedded_api.py`](ui/embedded_api.py) runs the migrations and then serves the API on
+loopback inside the same container, once per process. It is a no-op locally, where the API
+is already listening, and a no-op when `JA_API_BASE_URL` names an API elsewhere, so a real
+two-process deployment is never hijacked.
+
+**Demo mode replaces your data with sample data.** A shared URL has no per-user login, so
+`JA_DEMO_MODE=true` seeds a fictional candidate plus seven listings and **refuses resume
+uploads** with HTTP 403. The refusal lives in the API, not in the UI, so it holds even if
+somebody calls the endpoint directly.
+
+### Steps
+
+1. Push the repository to GitHub.
+2. On [share.streamlit.io](https://share.streamlit.io), create an app pointing at
+   **`ui/streamlit_app.py`**.
+3. Under **Advanced settings → Secrets**, add:
+
+   ```toml
+   JA_DEMO_MODE = "true"
+   ```
+
+4. Deploy. First load takes about half a minute while migrations run and the sample feed
+   is scored.
+
+The seeded feed is chosen to show every honesty case in one screen: three genuine matches
+in the high band, a senior role filtered with its stated years quoted, a content-free
+listing that scores 100 and is still demoted to *worth a look* at low confidence, a
+support role below the threshold, and a sales role filtered out.
+
+### What not to deploy
+
+**Do not deploy with your own resume.** Streamlit Cloud's filesystem is ephemeral and
+shared-by-URL: the database resets on redeploy, and until it does, anyone with the link
+reads your profile, your answers and your applications. If you want your real data on a
+hosted instance, host the API separately with `JA_API_TOKEN` set and keep the Streamlit app
+private — and understand that you are then responsible for a server holding your own PII.
+
+For your own job search, run it locally. That is what the Quick start above does, and it is
+the only configuration where your resume never leaves your machine.
+
+---
+
 ## Test results
 
 Run the whole suite:
@@ -94,17 +143,17 @@ Actual output, from this machine (macOS, CPython 3.12.15):
 ```
 ........................................................................ [ 89%]
 ...................................................                      [100%]
-539 passed in 41.31s
+560 passed in 39.34s
 ```
 
 All quality gates, as run in CI:
 
 | Gate | Command | Result |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest` | 539 passed |
+| Tests | `.venv/bin/python -m pytest` | 560 passed |
 | Lint | `.venv/bin/ruff check app ui tests` | clean |
 | Format | `.venv/bin/ruff format --check app ui tests` | clean |
-| Types | `.venv/bin/mypy app` | no issues in 75 files |
+| Types | `.venv/bin/mypy app` | no issues in 76 files |
 | Static security | `.venv/bin/bandit -r app ui -ll` | 0 medium/high |
 | Dependency CVEs | `.venv/bin/pip-audit` | see `security-baseline.txt` |
 
@@ -423,7 +472,7 @@ app/
   sources/  base.py  registry.py  manual_import.py  email_alerts.py
             linkedin.py  indeed.py  naukri.py  wellfound.py
 ui/         streamlit_app.py  api_client.py  components.py  views/
-tests/      conftest.py + 21 test modules (539 tests) + fixtures/ (labelled benchmark)
+tests/      conftest.py + 22 test modules (560 tests) + fixtures/ (labelled benchmark)
 docs/       PLAN.md  COMPLIANCE.md  ARCHITECTURE.md  SCHEMA.md  API.md  DESIGN.md
             RELEASE.md
 .github/    workflows/ci.yml - tests, lint, types, security on 3.11/3.12/3.13

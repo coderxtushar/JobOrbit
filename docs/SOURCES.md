@@ -99,6 +99,48 @@ imported, with an empty description, and score as sparse rather than as a false 
   because retrying cannot fix a typo. Transient failures (429, 5xx, timeouts) are retried
   with exponential backoff up to `JA_ATS_MAX_ATTEMPTS`, then reported.
 
+### Boards verified to carry India-located postings
+
+No board slug ships in the application: a bundled company list would turn a per-company
+lookup into a crawl, which is the distinction the whole capability model rests on. The
+table below is **documentation of a measurement**, so you can choose what to configure
+instead of guessing slugs.
+
+126 candidate slugs were probed across all five platforms on 2026-10-31. 30 returned HTTP
+200; 10 of those carried India-located postings. Measured per board:
+
+| Platform | Slug | Postings | India-located | India software roles |
+|---|---|---|---|---|
+| Ashby | `tekion` | 89 | 65 | 39 |
+| Ashby | `sarvam` | 46 | 46 | 21 |
+| Lever | `hevodata` | 53 | 51 | 17 |
+| Greenhouse | `druva` | 27 | 12 | 10 |
+| Lever | `meesho` | 49 | 48 | 4 |
+| Ashby | `atlan` | 7 | 5 | 2 |
+| Lever | `cred` | 14 | 13 | 2 |
+| Ashby | `composio` | 31 | 4 | 1 |
+| Ashby | `spotdraft` | 16 | 10 | 1 |
+| SmartRecruiters | `BoschGroup` | 5,019 | 585 | — |
+
+```bash
+JA_ATS_DISCOVERY_ENABLED=true
+JA_GREENHOUSE_BOARDS=druva,groww
+JA_LEVER_BOARDS=hevodata,meesho,cred
+JA_ASHBY_BOARDS=tekion,sarvam,atlan,composio,spotdraft
+JA_SMARTRECRUITERS_BOARDS=BoschGroup
+```
+
+**The honest ceiling.** Of the 98 India software roles across these boards, **3 are
+entry-level**, and the one closest to a fit is a customer-experience role. Entry-level
+hiring in India runs through Naukri, Instahyre and campus channels — the platforms whose
+terms prohibit automated access, which is why they are import-only here. Per-company ATS
+boards will keep surfacing mostly senior India roles no matter how many slugs are added, so
+**file import remains the primary route for fresher listings** and these boards are a
+supplement, not a replacement.
+
+Measured end to end against the real profile: configuring these boards moved the review
+band from **2 eligible listings, both outside India**, to **7, all India-located**.
+
 ## The five open job feeds
 
 These differ from the ATS boards in kind, not just in degree: each publisher exposes **one

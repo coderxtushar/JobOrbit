@@ -5,12 +5,88 @@ professional experience (Ethara AI, May 2026 – present).
 
 Nothing was pushed to git. No submission automation exists or was added.
 
-This file covers three rounds of work. **Round 3** below is the latest: confidence in the
-dashboard, cross-source duplication measured at scale, the benchmark expanded to 190 real
-listings, and a real application pilot. **Round 2** covers the Ashby and SmartRecruiters
-integration, the five open job feeds and the ranking-quality rules. **Round 1** follows
-unchanged, because its findings about the resume parser and the original scoring-honesty
-defects remain the record of how those were fixed.
+This file covers four rounds of work, newest first. **Round 4** measures whether adding
+India-hiring ATS boards fixes the coverage gap Round 3 found. **Round 3** covers confidence
+in the dashboard, cross-source duplication measured at scale, the benchmark expanded to 190
+real listings, and a real application pilot. **Round 2** covers the Ashby and
+SmartRecruiters integration, the five open job feeds and the ranking-quality rules.
+**Round 1** follows unchanged, because its findings about the resume parser and the original
+scoring-honesty defects remain the record of how those were fixed.
+
+---
+
+# Round 4 — India source coverage
+
+Round 3 found the product's biggest limit: only **4 India-located listings** in a
+7,791-job pool qualified as suitable, because the configured boards were almost entirely
+US and EU employers. This round measured whether adding India-hiring boards fixes that.
+
+## R4.1 What was measured
+
+126 candidate board slugs were probed across Greenhouse, Lever, Ashby, Workable and
+SmartRecruiters. **30 returned HTTP 200 and 10 carried India-located postings.** The
+per-board counts are in [SOURCES.md](SOURCES.md). No slug was added to application code;
+the boards are documented configuration the user opts into.
+
+Discovery was then run against those boards in a scratch database, leaving `var/`
+untouched, and scored against the real profile:
+
+| | Value |
+|---|---|
+| Records received | 2,341 across four platforms |
+| Jobs stored | 2,215 |
+| India-located | **522** |
+| Errors | 0 |
+| Eligible in high/review band | **7** |
+| Of which India-located | **7 of 7** |
+
+**Before: 2 eligible listings, both outside India. After: 7, all India-located.**
+
+## R4.2 The structural ceiling, measured rather than assumed
+
+Adding boards helps, but it cannot solve the problem. Of the **98 India software roles**
+across all ten verified boards, **3 are entry-level** — and the closest of those is a
+customer-experience role, not software engineering.
+
+The reason is structural, not a configuration mistake: entry-level hiring in India runs
+through Naukri, Instahyre, Cutshort, Hirist and campus channels, and every one of those
+prohibits automated access, which is why they are import-only here. Per-company ATS boards
+will keep returning mostly senior India roles however many slugs are configured.
+
+**File import therefore remains the primary route for fresher listings**, and these boards
+are a supplement. That is a limit of what any compliant tool can do, and it is recorded
+here rather than hidden behind a larger job count.
+
+## R4.3 A role-family gap the India run exposed
+
+With the India boards enabled, **3 of the 9 listings that first reached the review band
+were not software roles**: "Application Engineer - Heat Pumps" (76.4), "Cost Engineering &
+Benchmarking - MAE" (65.0) and, earlier, similar titles from the same employer. A large
+engineering company's titles share the generic role noun, so the only signal separating
+them from software work is the discipline named beside it — and `pumps`, `hvac`,
+`refrigeration`, `cost` and `benchmarking` were not in the foreign-family table.
+
+This was not a single outlier: three separate listings in one measured run, from a real
+employer whose board a candidate would plausibly configure. Adding those markers dropped
+the review band from 9 to **7**, with the two non-software rows correctly excluded.
+
+`operations` itself was deliberately **not** added, because DevOps and
+platform-operations roles are software work. The control is asserted: "Software
+Development Engineer", "DevOps Engineer", "Site Reliability Engineer", "Platform
+Engineer", "Cloud Engineer" and "IT Application Operations Engineer" all keep their title
+credit.
+
+Every benchmark metric held exactly after the change: precision@10 1.00, precision@20
+1.00, false-positive rate 0.0, recall 0.4091, 0 unsuitable rows in the high band.
+
+## R4.4 What is still true after this round
+
+- All 7 eligible India listings come from **one employer** (Bosch Group) and all carry
+  **low confidence at 0.60 coverage**, because that board publishes no requirements list.
+  The ten startup boards contributed **zero** eligible listings — their India roles are
+  senior.
+- The five sensitive answers still block every application, by design.
+- No submission automation exists.
 
 ---
 

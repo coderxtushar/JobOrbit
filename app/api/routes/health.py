@@ -29,5 +29,6 @@ def health(session: DbSession, settings: AppSettings) -> dict[str, object]:
         "llm_enabled": settings.llm_enabled,
         "scheduler_enabled": settings.scheduler_enabled,
         "loopback_only": settings.is_loopback_only,
+        "demo_mode": settings.demo_mode,
         "automated_submission_supported": False,
     }

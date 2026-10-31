@@ -52,6 +52,16 @@ def upload_resume(
     Extraction is a *proposal*: nothing is written to the candidate profile here. The
     client shows the result on an editable screen and then calls ``PUT /api/profile``.
     """
+    if settings.demo_mode:
+        raise ApiError(
+            "demo_mode_upload_blocked",
+            "This is a shared public demo, so resume upload is disabled. A deployment "
+            "like this has no per-user login, which means one visitor's resume would be "
+            "readable by the next. Run the app locally to use your own resume: the "
+            "README has the two commands.",
+            status.HTTP_403_FORBIDDEN,
+        )
+
     payload = file.file.read()
     stored = store_resume(file.filename or "resume", payload, settings)
 
