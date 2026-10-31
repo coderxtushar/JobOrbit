@@ -214,6 +214,10 @@ section[data-testid="stSidebar"] [data-testid="stAlert"] p {{ color:#B9C0D4 !imp
 
 /* Evidence / confidence block */
 .ja-ev {{ margin:.35rem 0 .1rem; }}
+.ja-note {{
+  background:var(--indigo-050); border:1px solid var(--indigo-100); border-radius:var(--radius-lg);
+  padding:.8rem .95rem; font-size:.86rem; line-height:1.6; color:var(--text); margin:.4rem 0 .9rem;
+}}
 .ja-ev-head {{
   font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.045em;
   color:var(--text-muted); margin:.45rem 0 .18rem;
@@ -284,6 +288,143 @@ hr {{ margin:1.05rem 0; border-color:var(--border); }}
 def inject_css() -> None:
     """Install the global stylesheet. Call once per page render."""
     st.markdown(_CSS, unsafe_allow_html=True)
+
+
+#: Landing-page stylesheet. Kept separate from ``_CSS`` and injected only by the landing
+#: page, because it hides the sidebar and widens the content block — both wrong for the
+#: workspace, and both impossible to scope away once injected into a Streamlit session.
+_LANDING_CSS = f"""
+<style>
+section[data-testid="stSidebar"] {{ display: none !important; }}
+div[data-testid="stAppViewContainer"] > section > div[data-testid="stMainBlockContainer"] {{
+  max-width: 1120px; padding-top: 1.2rem; padding-bottom: 0;
+}}
+.ja-lp-nav {{
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.35rem 0 1.6rem 0; flex-wrap: wrap; gap: 0.8rem;
+}}
+.ja-lp-mark {{ display: flex; align-items: center; gap: 0.6rem; }}
+.ja-lp-orb {{
+  width: 30px; height: 30px; border-radius: 50%; flex: 0 0 30px;
+  background: radial-gradient(circle at 32% 30%, {INDIGO_500}, {INDIGO_600} 62%, #2E2694 100%);
+  box-shadow: 0 0 0 4px {INDIGO_050}, 0 4px 12px rgba(81,70,229,0.28); position: relative;
+}}
+.ja-lp-orb::after {{
+  content: ""; position: absolute; inset: -7px -11px; border-radius: 50%;
+  border: 1.5px solid {INDIGO_100}; transform: rotate(-22deg);
+}}
+.ja-lp-word {{ font-size: 1.22rem; font-weight: 700; letter-spacing: -0.02em; color: {TEXT}; }}
+.ja-lp-word span {{ color: {INDIGO_600}; }}
+.ja-lp-links {{ display: flex; align-items: center; gap: 1.35rem; flex-wrap: wrap; }}
+.ja-lp-links a {{
+  color: {TEXT_MUTED}; text-decoration: none; font-size: 0.9rem; font-weight: 550;
+}}
+.ja-lp-links a:hover {{ color: {INDIGO_600}; }}
+.ja-lp-soon {{
+  font-size: 0.7rem; font-weight: 600; color: {TEXT_MUTED};
+  border: 1px dashed {BORDER}; border-radius: 999px; padding: 0.24rem 0.62rem;
+}}
+.ja-lp-hero {{ padding: 1.4rem 0 0.2rem 0; }}
+.ja-lp-eyebrow {{
+  display: inline-block; font-size: 0.74rem; font-weight: 650; letter-spacing: 0.08em;
+  text-transform: uppercase; color: {INDIGO_600}; background: {INDIGO_050};
+  border-radius: 999px; padding: 0.3rem 0.74rem; margin-bottom: 1rem;
+}}
+.ja-lp-h1 {{
+  font-size: 3.1rem; line-height: 1.06; font-weight: 700; letter-spacing: -0.035em;
+  color: {TEXT}; margin: 0 0 1rem 0; max-width: 17ch;
+}}
+.ja-lp-h1 em {{ font-style: normal; color: {INDIGO_600}; }}
+.ja-lp-sub {{
+  font-size: 1.1rem; line-height: 1.6; color: {TEXT_MUTED}; max-width: 56ch;
+  margin: 0 0 0.4rem 0;
+}}
+.ja-lp-trust {{
+  font-size: 0.84rem; color: {TEXT_MUTED}; margin-top: 1.1rem;
+  display: flex; gap: 0.55rem; align-items: center; flex-wrap: wrap;
+}}
+.ja-lp-trust b {{ color: {GREEN_600}; font-weight: 650; }}
+.ja-lp-sect {{
+  font-size: 0.74rem; font-weight: 650; letter-spacing: 0.09em; text-transform: uppercase;
+  color: {TEXT_MUTED}; margin: 2.6rem 0 0.3rem 0;
+}}
+.ja-lp-h2 {{
+  font-size: 1.72rem; font-weight: 700; letter-spacing: -0.022em; color: {TEXT};
+  margin: 0 0 0.45rem 0;
+}}
+.ja-lp-lede {{ font-size: 0.98rem; color: {TEXT_MUTED}; max-width: 62ch; margin: 0 0 1.3rem 0; }}
+.ja-lp-grid {{ display: grid; gap: 0.9rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+.ja-lp-grid.two {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+.ja-lp-card {{
+  background: {SURFACE}; border: 1px solid {BORDER}; border-radius: {RADIUS_LG};
+  padding: 1.15rem 1.2rem; box-shadow: 0 1px 2px rgba(20,26,43,0.04);
+}}
+.ja-lp-card h3 {{
+  font-size: 1rem; font-weight: 650; color: {TEXT}; margin: 0.55rem 0 0.4rem 0;
+}}
+.ja-lp-card p {{ font-size: 0.88rem; line-height: 1.55; color: {TEXT_MUTED}; margin: 0; }}
+.ja-lp-ico {{
+  width: 32px; height: 32px; border-radius: {RADIUS_SM}; background: {INDIGO_050};
+  color: {INDIGO_600}; display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; font-weight: 700;
+}}
+.ja-lp-plat {{
+  display: flex; align-items: flex-start; gap: 0.85rem; background: {SURFACE};
+  border: 1px solid {BORDER}; border-radius: {RADIUS_LG}; padding: 1.05rem 1.15rem;
+}}
+.ja-lp-plat .mark {{
+  width: 36px; height: 36px; flex: 0 0 36px; border-radius: {RADIUS_SM};
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.95rem; color: {SURFACE};
+}}
+.ja-lp-plat .body {{ flex: 1 1 auto; min-width: 0; }}
+.ja-lp-plat .name {{ font-size: 0.97rem; font-weight: 650; color: {TEXT}; }}
+.ja-lp-plat .how {{
+  font-size: 0.84rem; line-height: 1.5; color: {TEXT_MUTED}; margin-top: 0.3rem;
+}}
+.ja-lp-tag {{
+  display: inline-block; font-size: 0.71rem; font-weight: 650; border-radius: 999px;
+  padding: 0.2rem 0.56rem; margin-top: 0.5rem;
+}}
+.ja-lp-tag.live {{ background: {GREEN_100}; color: {GREEN_600}; }}
+.ja-lp-tag.import {{ background: {SLATE_100}; color: {SLATE_600}; }}
+.ja-lp-step {{ display: flex; gap: 0.9rem; padding: 0.75rem 0; }}
+.ja-lp-step .n {{
+  width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; background: {INDIGO_600};
+  color: {SURFACE}; font-size: 0.8rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}}
+.ja-lp-step h4 {{ font-size: 0.95rem; font-weight: 650; color: {TEXT}; margin: 0.1rem 0 0.25rem 0; }}
+.ja-lp-step p {{ font-size: 0.87rem; line-height: 1.55; color: {TEXT_MUTED}; margin: 0; }}
+.ja-lp-note {{
+  background: {INDIGO_050}; border: 1px solid {INDIGO_100}; border-radius: {RADIUS_LG};
+  padding: 1rem 1.15rem; font-size: 0.89rem; line-height: 1.6; color: {TEXT};
+}}
+.ja-lp-foot {{
+  border-top: 1px solid {BORDER}; margin-top: 2.8rem; padding: 1.3rem 0 2.2rem 0;
+  display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  font-size: 0.83rem; color: {TEXT_MUTED};
+}}
+.ja-lp-foot a {{ color: {TEXT_MUTED}; text-decoration: underline; }}
+@media (max-width: 860px) {{
+  .ja-lp-h1 {{ font-size: 2.25rem; max-width: 100%; }}
+  .ja-lp-grid, .ja-lp-grid.two {{ grid-template-columns: 1fr; }}
+  .ja-lp-nav {{ flex-direction: column; align-items: flex-start; }}
+}}
+</style>
+"""
+
+
+def inject_landing_css() -> None:
+    """Install the landing stylesheet. Only the landing page may call this."""
+    st.markdown(_LANDING_CSS, unsafe_allow_html=True)
+
+
+def wordmark() -> str:
+    return (
+        '<div class="ja-lp-mark"><div class="ja-lp-orb"></div>'
+        '<div class="ja-lp-word">Job<span>Orbit</span></div></div>'
+    )
 
 
 # ---------------------------------------------------------------------------------------

@@ -26,6 +26,8 @@ class JobQuery:
     company: str | None = None
     min_score: float | None = None
     max_age_days: int | None = None
+    discovered_after: datetime | None = None
+    bands: list[str] = field(default_factory=list)
     include_duplicates: bool = False
     unscored_only: bool = False
     profile_id: int | None = None
@@ -39,6 +41,9 @@ class JobQuery:
 #: method called ``list``, which shadows the builtin inside the class body and makes a
 #: bare ``list[Job]`` annotation resolve to that method instead of the generic type.
 JobList = list[Job]
+
+#: Same shadowing reason as ``JobList``: ``list`` is a method on the repository class.
+SourceNameList = list[SourceName]
 
 #: Band is the honest summary of a match; the raw score is only comparable *within* a band.
 #: A listing that published nothing but a title can score in the high nineties on the one
@@ -176,6 +181,20 @@ class JobRepository:
                     select(JobMatch.job_id).where(JobMatch.profile_id == query.profile_id)
                 )
             )
+        if query.discovered_after is not None:
+            # Compared against discovered_at, not posted_at: "new since you last looked"
+            # is about when this app first saw the listing. A job posted weeks ago can be
+            # new to the user today, and a job posted today may already have been seen.
+            statement = statement.where(Job.discovered_at > query.discovered_after)
+        if query.bands and query.profile_id is not None:
+            statement = statement.where(
+                Job.id.in_(
+                    select(JobMatch.job_id).where(
+                        JobMatch.profile_id == query.profile_id,
+                        JobMatch.band.in_(query.bands),
+                    )
+                )
+            )
         if query.min_score is not None and query.profile_id is not None:
             statement = statement.where(
                 Job.id.in_(
@@ -231,5 +250,31 @@ class JobRepository:
     def status_counts(self) -> dict[str, int]:
         rows = self._session.execute(
             select(Job.status, func.count(Job.id)).group_by(Job.status)
+        ).all()
+        return {status.value: count for status, count in rows}
+
+    def counts_by_source(self) -> dict[str, int]:
+        """Stored jobs per source, counted through the sighting table.
+
+        A job merged across platforms is counted once for each platform that saw it,
+        because the platform sections answer "what did this platform show me", not "how
+        many unique jobs exist". The job feed's own total stays the de-duplicated count.
+        """
+        rows = self._session.execute(
+            select(JobSourceReference.source, func.count(func.distinct(JobSourceReference.job_id)))
+            .join(Job, Job.id == JobSourceReference.job_id)
+            .where(Job.duplicate_of_id.is_(None))
+            .group_by(JobSourceReference.source)
+        ).all()
+        return {source.value: count for source, count in rows}
+
+    def status_counts_for_sources(self, sources: SourceNameList) -> dict[str, int]:
+        if not sources:
+            return {}
+        rows = self._session.execute(
+            select(Job.status, func.count(func.distinct(Job.id)))
+            .join(JobSourceReference, JobSourceReference.job_id == Job.id)
+            .where(JobSourceReference.source.in_(sources), Job.duplicate_of_id.is_(None))
+            .group_by(Job.status)
         ).all()
         return {status.value: count for status, count in rows}

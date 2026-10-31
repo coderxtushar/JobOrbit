@@ -352,6 +352,42 @@ def _profile_section() -> None:
                 "Maximum job age (days)", 1, 365, int(profile["max_job_age_days"])
             )
 
+        with st.expander("Hard constraints — these remove listings from your feed"):
+            st.caption(
+                "Everything above reorders the feed. These two take listings out of it, "
+                "with the reason shown on the card. Both are off by default."
+            )
+            india_only = st.checkbox(
+                "I can only work from India",
+                value=bool(profile.get("requires_india_work_eligibility")),
+                help=(
+                    "Excludes remote roles the employer has fenced to another country, "
+                    "such as 'Remote (US only)' or 'Remote - EMEA'. Roles that do not "
+                    "state a restriction are kept, because most employers simply omit it."
+                ),
+            )
+            stored_ceiling = profile.get("max_required_experience_years")
+            use_ceiling = st.checkbox(
+                "Hide listings that ask for more than a set number of years",
+                value=stored_ceiling is not None,
+            )
+            ceiling_value = st.number_input(
+                "Maximum required experience (years)",
+                0.0,
+                40.0,
+                float(stored_ceiling) if stored_ceiling is not None else 2.0,
+                step=0.5,
+                disabled=not use_ceiling,
+            )
+            preferred_companies = st.text_input(
+                "Preferred companies (comma separated, a soft preference)",
+                value=", ".join(profile.get("preferred_companies") or []),
+            )
+            preferred_industries = st.text_input(
+                "Preferred industries (comma separated, a soft preference)",
+                value=", ".join(profile.get("preferred_industries") or []),
+            )
+
         if st.form_submit_button("Save profile", type="primary"):
             payload: dict = {
                 "full_name": full_name,
@@ -391,6 +427,10 @@ def _profile_section() -> None:
                 "salary_expectation_min": salary_min or None,
                 "salary_expectation_max": salary_max or None,
                 "notice_period_days": None if notice_period < 0 else notice_period,
+                "requires_india_work_eligibility": india_only,
+                "max_required_experience_years": ceiling_value if use_ceiling else None,
+                "preferred_companies": _csv_to_list(preferred_companies),
+                "preferred_industries": _csv_to_list(preferred_industries),
             }
             try:
                 client.update_profile(payload)

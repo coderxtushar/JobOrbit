@@ -16,7 +16,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import Authorized, DbSession, Llm, Profile
+from app.api.deps import AppSettings, Authorized, DbSession, Llm, Profile, refuse_in_demo_mode
 from app.api.errors import ApiError
 from app.db.models import BatchRun, BatchStatus
 from app.db.repositories import BatchRunRepository, JobRepository
@@ -91,7 +91,9 @@ def start_batch(
     session: DbSession,
     profile: Profile,
     provider: Llm,
+    settings: AppSettings,
 ) -> BatchRunDetail:
+    refuse_in_demo_mode(settings, "batch_run")
     runs = BatchRunRepository(session)
     active = runs.active()
     if active is not None:

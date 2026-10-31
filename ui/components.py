@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -64,6 +65,7 @@ __all__ = [
     "band_badge",
     "category_bars",
     "confidence_badge",
+    "demo_session_key",
     "display_timezone",
     "empty_state",
     "evidence_block",
@@ -109,9 +111,33 @@ def local_date(value: str | None) -> str:
     return local_time(value, "%d %b %Y")
 
 
-@st.cache_resource
+_DEMO_SESSION_STATE_KEY = "_joborbit_demo_session"
+
+
+def demo_session_key() -> str:
+    """An unguessable key identifying this browser session's copy of the demo data.
+
+    Minted per Streamlit session, which is per browser tab, so two visitors never share a
+    demo database. This is **isolation, not authentication**: the key proves nothing about
+    who is calling, it only keeps two honest visitors apart. Every row it protects is
+    fictional, which is why resume upload stays refused outright rather than isolated.
+    """
+    existing = st.session_state.get(_DEMO_SESSION_STATE_KEY)
+    if isinstance(existing, str) and existing:
+        return existing
+    minted = secrets.token_urlsafe(32)
+    st.session_state[_DEMO_SESSION_STATE_KEY] = minted
+    return minted
+
+
 def get_client() -> ApiClient:
-    return ApiClient.from_env()
+    """The API client for this browser session.
+
+    Deliberately not ``st.cache_resource``: that cache is process-wide, so every visitor
+    would share one client and therefore one demo session key, which is the isolation bug
+    this exists to prevent. Constructing it is a dataclass instantiation.
+    """
+    return ApiClient.from_env(demo_session=demo_session_key())
 
 
 def api_error(exc: ApiClientError) -> None:

@@ -47,11 +47,15 @@ def _serve(host: str, port: int) -> None:
 
 
 def _prepare_database() -> None:
-    """Create the schema and, in demo mode, the sample data.
+    """Create the schema and, in demo mode, the sample data and the per-visitor store.
 
     Streamlit Cloud never runs ``alembic upgrade head``, and its filesystem is wiped on
     redeploy, so the schema has to be created at boot. Alembic is used rather than
     ``create_all`` so the deployed schema is the same one the migrations produce.
+
+    In demo mode the seeded database becomes a *template*: every visitor gets a copy of it
+    so one visitor's shortlist never reaches the next. The template itself is only ever
+    read after this point.
     """
     from pathlib import Path
 
@@ -65,16 +69,22 @@ def _prepare_database() -> None:
 
     from app.config import get_settings
 
-    if not get_settings().demo_mode:
+    settings = get_settings()
+    if not settings.demo_mode:
         return
 
     from sqlalchemy.orm import Session
 
     from app.db.base import build_engine
     from app.services.demo import seed_demo_data
+    from app.services.demo_sessions import configure_store
 
     with Session(build_engine()) as session:
         seed_demo_data(session)
+
+    template = Path(settings.database_url.split("///", 1)[-1])
+    if template.exists():
+        configure_store(settings, template)
 
 
 @st.cache_resource(show_spinner="Starting the local API…")

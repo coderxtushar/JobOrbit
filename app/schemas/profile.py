@@ -135,6 +135,10 @@ class ProfileUpdate(BaseModel):
     excluded_keywords: list[str] | None = None
     minimum_match_score: float | None = Field(default=None, ge=0, le=100)
     max_job_age_days: int | None = Field(default=None, ge=1, le=365)
+    requires_india_work_eligibility: bool | None = None
+    max_required_experience_years: float | None = Field(default=None, ge=0, le=40)
+    preferred_companies: list[str] | None = None
+    preferred_industries: list[str] | None = None
     scoring_weights: ScoringWeights | None = None
     extra_answers: dict[str, Any] | None = None
 
@@ -223,6 +227,11 @@ class ProfileRead(BaseModel):
     excluded_keywords: list[str]
     minimum_match_score: float
     max_job_age_days: int
+    requires_india_work_eligibility: bool
+    max_required_experience_years: float | None
+    preferred_companies: list[str]
+    preferred_industries: list[str]
+    onboarding_completed_at: datetime | None
     scoring_weights: dict[str, Any]
     extra_answers: dict[str, Any]
     created_at: datetime

@@ -19,7 +19,12 @@ from datetime import datetime, timedelta
 
 from app.db.models import CandidateProfile, EmploymentType, Job, JobStatus, WorkArrangement, utcnow
 from app.services.evidence import DescriptionEvidence, analyse_description
-from app.services.text import normalize_company, normalize_location, seniority_level
+from app.services.text import (
+    normalize_company,
+    normalize_location,
+    remote_scope,
+    seniority_level,
+)
 
 SENIORITY_BY_LEVEL: dict[str, int] = {
     "fresher": 0,
@@ -63,17 +68,39 @@ def _location_is_acceptable(job: Job, profile: CandidateProfile) -> bool:
     """Decide location acceptability, treating silence as acceptance."""
     preferred = [normalize_location(item) for item in profile.preferred_locations if item.strip()]
     arrangements = set(profile.work_arrangements or [])
+    job_parts = {
+        part.strip() for part in (job.location_normalized or "").split(",") if part.strip()
+    }
 
-    if job.work_arrangement is WorkArrangement.REMOTE and (
-        not arrangements or "remote" in arrangements
-    ):
-        return True
+    # A remote role fenced to another region is not open to a candidate who can only work
+    # from India: boards publish "Remote (US only)" and "Remote - EMEA" in the same field
+    # as plain "Remote", so accepting every remote listing credits roles the candidate
+    # cannot legally hold. Gated on the explicit profile constraint rather than applied
+    # always, because the project's rule is that a filter needs positive evidence of
+    # ineligibility and an unstated work authorization is not evidence. The generic
+    # "remote" token is excluded from the comparison because it is in almost every
+    # candidate's preferences and would match the fenced role on the word alone.
+    if job.work_arrangement is WorkArrangement.REMOTE:
+        fenced_elsewhere = (
+            profile.requires_india_work_eligibility
+            and remote_scope(job.location or "", job.description or "") == "elsewhere"
+        )
+        if fenced_elsewhere:
+            named_regions = {
+                part.strip()
+                for wanted in preferred
+                for part in wanted.split(",")
+                if part.strip() and part.strip() != "remote"
+            }
+            return bool(job_parts & named_regions)
+        if not arrangements or "remote" in arrangements:
+            return True
+
     if not preferred:
         return True
     if not job.location_normalized:
         return True
 
-    job_parts = {part.strip() for part in job.location_normalized.split(",") if part.strip()}
     for wanted in preferred:
         wanted_parts = {part.strip() for part in wanted.split(",") if part.strip()}
         if job_parts & wanted_parts:
@@ -115,14 +142,23 @@ def _seniority_reasons(
             required = evidence.stated_min_years
             source = "states in its description that it requires"
 
-    if (
-        required is not None
-        and required - (profile.years_experience or 0.0) > EXPERIENCE_TOLERANCE_YEARS
-    ):
-        reasons.append(
-            f"{source} at least {required:g} years of experience; your profile records "
-            f"{profile.years_experience:g}"
-        )
+    if required is not None:
+        # An explicit ceiling is an absolute statement ("never show me anything asking for
+        # more than 2 years"), so it is compared against the listing's bar directly. The
+        # default tolerance is relative to the candidate's own experience instead, which is
+        # what keeps a profile that gains experience from needing the number re-tuned.
+        ceiling = profile.max_required_experience_years
+        if ceiling is not None:
+            if required > ceiling:
+                reasons.append(
+                    f"{source} at least {required:g} years of experience, above the "
+                    f"{ceiling:g}-year maximum you set"
+                )
+        elif required - (profile.years_experience or 0.0) > EXPERIENCE_TOLERANCE_YEARS:
+            reasons.append(
+                f"{source} at least {required:g} years of experience; your profile records "
+                f"{profile.years_experience:g}"
+            )
     return reasons
 
 
