@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     display_timezone: str = "Asia/Kolkata"
 
+    #: Public-demo deployment. Seeds a fictional profile and sample jobs, and **refuses
+    #: resume uploads**, because a shared deployment has no per-user login: one visitor's
+    #: resume would be readable by the next. Enforced in the API, not just hidden in the UI.
+    demo_mode: bool = False
+
     # ---------- Storage ----------
     database_url: str = "sqlite+pysqlite:///./var/jobassist.db"
     data_dir: Path = Path("./var")
