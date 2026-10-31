@@ -256,6 +256,74 @@ def test_scoring_then_filtering_by_score(client: TestClient) -> None:
     assert match["category_scores"]
 
 
+def test_the_match_payload_reports_confidence_separately_from_the_score(
+    client: TestClient,
+) -> None:
+    """The dashboard renders confidence, so the API must serve it on list and detail alike."""
+    client.put(
+        "/api/profile",
+        json={
+            "target_titles": ["Backend Developer"],
+            "technical_skills": ["python", "fastapi"],
+            "preferred_locations": ["Bengaluru"],
+            "work_arrangements": ["hybrid", "remote"],
+            "experience_level": "fresher",
+        },
+    )
+    _import(client)
+    client.post("/api/jobs/score", json={"rescore_all": True})
+
+    listed = client.get("/api/jobs", params={"status": "SCORED"}).json()["items"][0]
+    detail = client.get(f"/api/jobs/{listed['id']}").json()
+
+    for match in (listed["match"], detail["match"]):
+        assert match["confidence"] in {"high", "medium", "low"}
+        assert 0.0 <= match["evidence_coverage"] <= 1.0
+        assert isinstance(match["confidence_reasons"], list)
+        assert isinstance(match["total_score"], float)
+        assert match["band"] in {"high", "review", "low"}
+
+    assert listed["match"]["confidence"] == detail["match"]["confidence"]
+    assert listed["match"]["evidence_coverage"] == detail["match"]["evidence_coverage"]
+
+
+def test_a_low_confidence_match_states_its_reasons(client: TestClient) -> None:
+    """A listing with no location, no date and no requirements must explain its weakness."""
+    client.put(
+        "/api/profile",
+        json={
+            "target_titles": ["Software Engineer"],
+            "technical_skills": ["python"],
+            "preferred_locations": ["Bengaluru"],
+            "work_arrangements": ["remote"],
+            "experience_level": "fresher",
+        },
+    )
+    client.post(
+        "/api/jobs/import",
+        json={
+            "records": [
+                {
+                    "source": "manual",
+                    "external_id": "TERSE-1",
+                    "title": "Software Engineer",
+                    "company": "Terse Listings Inc",
+                    "description": "We are hiring a software engineer. Apply now.",
+                    "url": "https://example.com/terse-1",
+                }
+            ]
+        },
+    )
+    client.post("/api/jobs/score", json={"rescore_all": True})
+
+    jobs = client.get("/api/jobs", params={"search": "Terse Listings"}).json()["items"]
+    match = jobs[0]["match"]
+    assert match["confidence"] == "low"
+    assert match["evidence_coverage"] < 1.0
+    assert match["confidence_reasons"]
+    assert match["band"] != "high"
+
+
 def test_pagination_is_consistent(client: TestClient) -> None:
     for index in range(7):
         _import(

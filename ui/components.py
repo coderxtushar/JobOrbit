@@ -18,7 +18,9 @@ from ui.theme import (
     SLATE_100,
     card_anchor,
     category_bars,
+    confidence_badge,
     esc,
+    evidence_block,
     inject_css,
     metric_card,
     monogram,
@@ -27,6 +29,7 @@ from ui.theme import (
     score_ring,
     section_header,
     skill_row,
+    unassessable_fields,
 )
 
 #: Retained for callers and tests that expect (label, colour) per band.
@@ -60,8 +63,10 @@ __all__ = [
     "api_error",
     "band_badge",
     "category_bars",
+    "confidence_badge",
     "display_timezone",
     "empty_state",
+    "evidence_block",
     "get_client",
     "inject_css",
     "job_card",
@@ -74,6 +79,7 @@ __all__ = [
     "score_ring",
     "section_header",
     "skill_chips",
+    "unassessable_fields",
 ]
 
 
@@ -221,6 +227,11 @@ def job_card(job: dict[str, Any], *, key_prefix: str = "", on_change=None) -> No
             st.markdown(_header_html(job), unsafe_allow_html=True)
         with ring:
             st.markdown(score_ring(score, band), unsafe_allow_html=True)
+            if match:
+                st.markdown(
+                    confidence_badge(match.get("confidence", ""), match.get("evidence_coverage")),
+                    unsafe_allow_html=True,
+                )
 
         if match:
             rows = [skill_row("You have", match.get("matched_skills") or [], "green")]
@@ -284,6 +295,12 @@ def job_card(job: dict[str, Any], *, key_prefix: str = "", on_change=None) -> No
                 st.markdown(
                     category_bars(match.get("category_scores") or {}),
                     unsafe_allow_html=True,
+                )
+                st.markdown(evidence_block(match), unsafe_allow_html=True)
+                st.caption(
+                    "The score measures relevance; confidence measures how much evidence "
+                    "stood behind it. A low-confidence score is never promoted to the high "
+                    "band, and the number itself is never adjusted."
                 )
                 st.caption(
                     "Scores compare the listing against what your profile records. A skill "

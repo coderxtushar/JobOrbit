@@ -108,6 +108,26 @@ def _facts_for_letter(job: Job, profile: CandidateProfile, matched_skills: list[
     return facts
 
 
+def _clause(value: str, *, limit: int) -> str:
+    """Trim a resume fragment to ``limit`` characters, ending at a clause boundary.
+
+    Cutting on the character count alone produced letters that read "...multi-agent
+    workflow with 5+ ." — a dangling quantifier followed by a full stop, in text sent to an
+    employer. Backing up to the last clause separator keeps the sentence readable, and the
+    text is never reworded: only whole clauses are dropped.
+    """
+    text = " ".join(value.split()).strip().rstrip(".,;:")
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    cut = max(head.rfind(separator) for separator in (";", ",", " and ", " using ", ". "))
+    head = head[:cut] if cut > limit // 3 else head.rsplit(" ", 1)[0]
+    head = head.strip().rstrip(".,;:")
+    # A trailing "5+" is a quantifier whose noun was cut off, so the word goes with it.
+    # Only digits qualify: "C++" is a complete, legitimate ending.
+    return re.sub(r"\s+\d+\+$", "", head).strip().rstrip(".,;:")
+
+
 def _rule_based_cover_letter(job: Job, profile: CandidateProfile, matched_skills: list[str]) -> str:
     name = profile.full_name or "the applicant"
     opening = (
@@ -131,9 +151,9 @@ def _rule_based_cover_letter(job: Job, profile: CandidateProfile, matched_skills
     project_sentence = ""
     for project in list(profile.projects)[:1]:
         if isinstance(project, dict) and project.get("name"):
-            description = str(project.get("description", "")).strip().rstrip(".")
+            description = _clause(str(project.get("description", "")), limit=160)
             project_sentence = f"Most recently I built {project['name']}" + (
-                f", {description[:160]}." if description else "."
+                f", {description}." if description else "."
             )
             break
 

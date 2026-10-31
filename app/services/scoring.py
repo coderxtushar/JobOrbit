@@ -43,8 +43,14 @@ class ScoreReport:
     high: int = 0
     review: int = 0
     low: int = 0
+    remaining: int = 0
     failures: list[str] = field(default_factory=list)
     scorer: str = "rule_based"
+
+
+#: Jobs scored per request. A bound keeps one HTTP call predictable; ``ScoreReport.remaining``
+#: tells the caller how many are still waiting so the work can be finished in further calls.
+_SCORE_BATCH_LIMIT = 2000
 
 
 class ScoringService:
@@ -96,6 +102,7 @@ class ScoringService:
         *,
         job_ids: list[int] | None = None,
         rescore_all: bool = False,
+        offset: int = 0,
     ) -> ScoreReport:
         """Score the requested jobs, or every unscored job when nothing is specified."""
         report = ScoreReport()
@@ -107,18 +114,20 @@ class ScoringService:
             missing = set(job_ids) - {job.id for job in jobs}
             report.failures.extend(f"job {job_id} does not exist" for job_id in sorted(missing))
         else:
-            statuses = (
-                None
-                if rescore_all
-                else [JobStatus.DISCOVERED, JobStatus.SCORED, JobStatus.FILTERED_OUT]
-            )
+            # Only jobs with no match row for this profile, and the count of those left
+            # over. The previous filter listed DISCOVERED, SCORED and FILTERED_OUT, which
+            # includes everything already scored, so each call re-scored the same first
+            # 2000 by discovery date: a 7,791-job database never progressed past the
+            # first 2000 and the response still reported success.
             query = JobQuery(
-                statuses=statuses or [],
-                limit=2000,
+                unscored_only=not rescore_all,
+                limit=_SCORE_BATCH_LIMIT,
+                offset=offset if rescore_all else 0,
                 sort_by="discovered_at",
                 profile_id=profile.id,
             )
             jobs = self._jobs.list(query)
+            report.remaining = max(0, self._jobs.count(query) - offset - len(jobs))
 
         for job in jobs:
             try:

@@ -19,11 +19,16 @@ from app.schemas.source import (
     Capabilities,
     DiagnosticEntry,
     Diagnostics,
+    DuplicationReportRead,
     EstimatedMetrics,
+    FalseMergeSuspectRead,
+    MissedMergeSuspectRead,
+    NormalizationCollisionRead,
     OperationalMetrics,
     SourceRead,
     SourceUpdate,
 )
+from app.services.duplication import analyse_duplication
 from app.services.metrics import estimated_metrics, operational_metrics
 from app.sources import (
     all_adapters,
@@ -190,6 +195,66 @@ def metrics(session: DbSession, profile: Profile) -> OperationalMetrics:
 def estimated(session: DbSession, profile: Profile) -> EstimatedMetrics:
     counted = operational_metrics(session, profile.id)
     return estimated_metrics(counted.applications_prepared)
+
+
+@router.get(
+    "/metrics/duplication",
+    response_model=DuplicationReportRead,
+    summary="Cross-source duplication rates and merge suspects",
+)
+def duplication(
+    session: DbSession,
+    suspect_limit: Annotated[int, Query(ge=1, le=200)] = 25,
+) -> DuplicationReportRead:
+    report = analyse_duplication(session, suspect_limit=suspect_limit)
+    return DuplicationReportRead(
+        jobs_total=report.jobs_total,
+        sightings_total=report.sightings_total,
+        merged_sightings=report.merged_sightings,
+        duplicate_rate=report.duplicate_rate,
+        exact_duplicate_sightings=report.exact_duplicate_sightings,
+        fuzzy_duplicate_sightings=report.fuzzy_duplicate_sightings,
+        sightings_by_rule=report.sightings_by_rule,
+        multi_source_jobs=report.multi_source_jobs,
+        cross_source_duplicate_rate=report.cross_source_duplicate_rate,
+        sources_seen=report.sources_seen,
+        source_pair_overlaps=report.source_pair_overlaps,
+        jobs_with_application=report.jobs_with_application,
+        multi_source_jobs_with_application=report.multi_source_jobs_with_application,
+        missed_merge_suspects=[
+            MissedMergeSuspectRead(
+                job_ids=list(suspect.job_ids),
+                titles=list(suspect.titles),
+                company=suspect.company,
+                sources=list(suspect.sources),
+                title_overlap=suspect.title_overlap,
+                reason=suspect.reason,
+            )
+            for suspect in report.missed_merge_suspects
+        ],
+        false_merge_suspects=[
+            FalseMergeSuspectRead(
+                job_id=suspect.job_id,
+                stored_title=suspect.stored_title,
+                observed_titles=list(suspect.observed_titles),
+                observed_companies=list(suspect.observed_companies),
+                sources=list(suspect.sources),
+                title_overlap=suspect.title_overlap,
+                reason=suspect.reason,
+            )
+            for suspect in report.false_merge_suspects
+        ],
+        normalization_collisions=[
+            NormalizationCollisionRead(
+                normalized_company=collision.normalized_company,
+                raw_companies=list(collision.raw_companies),
+                job_count=collision.job_count,
+            )
+            for collision in report.normalization_collisions
+        ],
+        buckets_skipped=report.buckets_skipped,
+        is_healthy=report.is_healthy,
+    )
 
 
 @router.get("/import-runs", response_model=Page[dict], summary="Import and discovery history")

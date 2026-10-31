@@ -5,12 +5,317 @@ professional experience (Ethara AI, May 2026 – present).
 
 Nothing was pushed to git. No submission automation exists or was added.
 
-This file covers two rounds of work on 2026-10-29. **Round 2** below is the later one:
-Ashby and SmartRecruiters integration, five open job feeds, and the ranking-quality rules.
-**Round 1** follows it unchanged, because its findings about the resume parser and the
-original scoring-honesty defects remain the record of how those were fixed.
+This file covers three rounds of work. **Round 3** below is the latest: confidence in the
+dashboard, cross-source duplication measured at scale, the benchmark expanded to 190 real
+listings, and a real application pilot. **Round 2** covers the Ashby and SmartRecruiters
+integration, the five open job feeds and the ranking-quality rules. **Round 1** follows
+unchanged, because its findings about the resume parser and the original scoring-honesty
+defects remain the record of how those were fixed.
 
 ---
+
+# Round 3 — product readiness and the real pilot
+
+## R3.1 Test results (actual)
+
+| Gate | Command | Result |
+|---|---|---|
+| Tests | `.venv/bin/python -m pytest` | **539 passed in 41.31s** (was 484; +55) |
+| Lint | `.venv/bin/ruff check app ui tests` | All checks passed |
+| Format | `.venv/bin/ruff format --check app ui tests` | 113 files already formatted |
+| Types | `.venv/bin/mypy app` | no issues in 75 source files |
+| Static security | `.venv/bin/bandit -r app ui -ll` | 0 medium, 0 high (15,223 lines) |
+| Migrations | `upgrade head` / `check` / `downgrade base` | 17 tables, mode 600, no drift, clean teardown |
+| Migration heads | `.venv/bin/alembic heads` | single head `890e1d834c56` |
+| Submission routes | grep of the OpenAPI document | 0 routes containing "submit" |
+
+## R3.2 Confidence surfaced in the dashboard
+
+`total_score`, `confidence` and `evidence_coverage` were already computed, persisted on
+`job_match` and returned by the API, but the dashboard showed only the score ring and the
+band — so the honesty work was invisible where jobs are actually read. Each job card now
+carries a confidence badge beside the ring and, in the expander, the evidence block: the
+coverage percentage, the reasons for the confidence level, and the categories that could
+not be assessed with the reason each one was dropped.
+
+A deliberate choice carried over from the design system: **low confidence renders in a
+neutral slate, not red**, and the word always accompanies the colour. Low confidence means
+the listing published too little to judge, which is not the candidate's failure.
+
+12 UI and API regression tests were added, including one that renders the populated
+diagnostics panel and asserts the suspects are tabulated rather than merely counted.
+
+## R3.3 Cross-source duplication, measured on 7,194 records
+
+One run across all ten working discovery sources:
+
+| | Value |
+|---|---|
+| Records received | 7,194 |
+| New jobs created | 2,110 |
+| Duplicates detected | 5,084 |
+| Invalid rows | 0 |
+| Stored jobs after merging | 7,791 |
+| Sightings | 8,070 |
+| Merged sightings | 279 → **duplicate rate 3.46%** |
+| Exact duplicates (source id or canonical URL) | 0 |
+| Fuzzy duplicates (fingerprint) | 279 |
+| Jobs seen on more than one source | 10 → **cross-source rate 0.13%** |
+| Overlapping source pairs | `arbeitnow+greenhouse` 8, `greenhouse+lever` 1, `greenhouse+jobicy` 1 |
+| Normalization collisions | 0 |
+| Jobs carrying an application | 14, of which 1 on a merged listing — none deleted |
+
+**Cross-source duplication is far lower than expected.** The ATS boards and the open feeds
+barely overlap, because the feeds carry mostly remote and EU employers that do not run the
+per-company boards configured here. The headline number to watch is therefore the
+*within-source* rate, not the cross-source one.
+
+## R3.4 Four defects found by measuring duplication
+
+**One bad posting discarded an entire company board.** Greenhouse's `databricks` board
+lists one role whose location is a 300-plus character list of US states. A parse failure
+was reported per board, so that single row discarded all 901 of the board's postings and
+the run reported an error rather than the loss. Display fields are now clipped and an
+unusable row is skipped on its own: `databricks` returns **901 postings, 0 errors** where
+it previously returned **0 with an error**.
+
+**Every CJK title collapsed to the same fingerprint.** `normalize_text` keeps only
+`[a-z0-9+#.-]`, so a Chinese or Japanese title reduced to the empty string and any two
+differing roles at one company and city produced an *identical* fingerprint. Verified on
+two live SmartRecruiters postings — `半导体采购质量工程师` and `产品认证项目经理（智舱/智驾）` — which merged
+into one job. After the fix the same two payloads create two jobs.
+
+**Every "PhD - <topic>" posting collapsed to "phd".** `_core_title` took the text before
+the first dash unconditionally, so a dozen unrelated Bosch research openings merged into
+one. A dash-separated prefix is now only treated as the role when it carries at least two
+meaningful words; the location-suffix stripping that the rule exists for is unchanged,
+asserted by test.
+
+**The detector was blind to both.** It tokenised titles through `dedup._core_title`, the
+very function causing the merges, so two "PhD" rows scored 100% overlap and the false merge
+was reported as healthy. Tokenising titles as written raised detection from **2 suspects to
+25** on the same data.
+
+The 25 remaining false merges are pre-existing rows: a merge is sticky because each sighting
+re-matches by its own stored source id. None carries an application, so no historical record
+is at risk, and a fresh discovery no longer produces them.
+
+## R3.5 Benchmark expanded to 190 real listings
+
+Rebuilt from the discovered pool with `python -m tests.build_eval_dataset`. Every row keeps
+the URL it came from and the stated fact its label rests on. Hand-written listings are
+excluded: a listing authored to fail a rule cannot be evidence that the rule works.
+
+| | |
+|---|---|
+| Rows | **190**, across 15 real publisher hosts |
+| India-located / remote / elsewhere | 67 / 32 / 91 |
+| Labels | relevant 69, adversarial 25, over_experience_bar 19, senior 20, preference_mismatch 15, location_restricted 12, irrelevant 15, support 10, sparse 8 |
+| Relevant rows per family | software_general 21, genai_agentic 18, backend_python 15, cloud_devops 7, frontend 5 |
+
+| Metric | Before (v5, 58 rows) | After (v7, 190 rows) |
+|---|---|---|
+| precision@10 | 0.60 | **1.00** |
+| precision@20 | 0.3684 | **1.00** |
+| False-positive rate above the 65 threshold | 0.0 | **0.0** |
+| Unsuitable rows in the high band | 0 | **0** |
+| Relevant recall | 0.8571 | 0.4091 |
+
+**Recall is not comparable across the two versions and did not regress.** Version 5 held 7
+`relevant` rows; version 7 holds 69, chosen on job family, location and stated experience
+bar alone — never on whether the candidate's skills match. Of the 69, none is filtered
+incorrectly; those that miss the review band sit at 40–60 because skills carry 35% of the
+weight and almost no listing in this pool publishes a requirements list, so skills are
+inferred and capped. **That was left alone deliberately**: raising the skills score to lift
+recall would be tuning against the benchmark and would cost the precision figures.
+
+### Per family
+
+| Family | Relevant rows | Recall | False-positive rate | Mean score of relevant rows |
+|---|---|---|---|---|
+| software_general | 21 | 0.6667 | undefined (no unsuitable rows) | 70.96 |
+| genai_agentic | 18 | 0.3333 | 0.0 | 62.51 |
+| backend_python | 15 | 0.2000 | 0.0 | 61.43 |
+| cloud_devops | 7 | 0.2857 | 0.0 | 59.06 |
+| frontend | 5 | 0.4000 | undefined (no unsuitable rows) | 60.52 |
+| non_target | 0 | n/a | 0.0 | n/a |
+
+Every family except `software_general` has a mean suitable score **just below the
+candidate's own 65 threshold**, which is exactly why recall is low while the
+false-positive rate is zero everywhere. The threshold, not the ranker, is what excludes
+them.
+
+### Confidence calibration
+
+| Level | Rows | Judged rows | Share suitable | Mean evidence coverage |
+|---|---|---|---|---|
+| high | **0** | 0 | undefined | undefined |
+| medium | 153 | 109 | **0.5596** | 0.898 |
+| low | 37 | 27 | **0.1852** | 0.638 |
+
+A medium-confidence row is suitable **three times as often** as a low-confidence one and
+rests on more evidence (0.90 against 0.64), so the label carries real information and is
+worth showing. **But no listing in 190 earns `high` confidence**, because the gate needs a
+published requirements list and real employers rarely publish one. That is recorded in the
+baseline and asserted by test, so a future relaxation has to be deliberate.
+
+## R3.6 Four ranking defects found by the expanded benchmark
+
+**A weaker structured field masked an explicit prose bar.** A Bosch listing carries
+`experienceLevel: "Associate"`, which normalises to a 1-year minimum, while its text asks
+for 3 years. The filter took the structured field whenever it existed, so a role three
+years above the candidate stayed eligible. It now enforces the higher of the two figures
+the employer gave, and a listing that welcomes freshers still overrides a boilerplate
+years figure.
+
+**A three-way title tie was resolved the worst way.** "Backend Engineer - Python" tied at
+42.5 against "Software Engineer", "Backend Developer" and "Python Developer". Keeping the
+first left the match resting on the generic word "engineer", so the generic cap cut it to
+25/100 — for a genuine backend role. A tie now prefers a target that shares a word saying
+what the role does.
+
+**"Engineer" and "Developer" were treated as different jobs.** A profile saying "Backend
+Developer" scored a listing saying "Backend Engineer" at 42/100, because the differing role
+nouns stayed in the denominator. They are now collapsed. The safety claim is asserted, not
+assumed: "Technical Support Engineer" and "Sales Engineer" still score ≤25 and stay below
+the threshold.
+
+**"Staff+" and "Sr." escaped the seniority filter entirely.** `normalize_text` keeps `+`
+and `.` so that "c++" and "node.js" survive as skills, which left these titles as the
+tokens `staff+` and `sr.` — neither matched a seniority marker. That is why "Staff+
+Software Engineer, Memory & Search" and "Sr. Controls Software Engineer" appeared in the
+review band on real data. Both are now filtered; `c++` and `node.js` are unaffected.
+
+All four metrics held at or above baseline after every one of these changes.
+
+## R3.7 "Score all jobs" never finished
+
+The default scoring query listed `DISCOVERED`, `SCORED` and `FILTERED_OUT` — which
+includes everything already scored — and took the first 2000 by discovery date with no
+offset. On this 7,791-job database every press re-scored the same 2000 and **5,791 jobs
+stayed permanently unscored while the response reported success.**
+
+The incremental path now selects only jobs with no match row, the full-rescore path accepts
+an offset, and both report `remaining` so the caller knows work is left. Verified live:
+2000 → 2000 → 2000 → 1791 → 0, all 7,791 scored.
+
+## R3.8 Within a band, evidence now orders before the number
+
+Three rows whose title, company and location were each a single character scored **100.0**
+from the one category that could be assessed (20% coverage, low confidence) and sat at the
+**top of the review band**, above fully-assessed matches at 71–77. The band gate had
+already demoted them from `high`; ordering *inside* the band was still score-only. Ordering
+is now band, then confidence, then score. The score itself is never adjusted. Every
+benchmark metric held exactly.
+
+## R3.9 The real application pilot
+
+Run against the verified profile and the real parsed resume.
+
+**Of 7,791 scored listings, 2 genuinely-discovered rows reach the review band or better.**
+Both were prepared:
+
+| Job | Score | Band | Confidence | Coverage |
+|---|---|---|---|---|
+| Cloud Engineer Automation @ Smile Digital Health (Toronto) | 70.8 | review | medium | 0.95 |
+| AV Engineer - Platform @ spotify (Stockholm) | 71.6 | review | low | 0.45 |
+
+Audited on the prepared applications:
+
+- **Resume variants differ per job family** (variant 5 and variant 4), selected by the
+  existing rule.
+- **Cover letters are job-specific**: 16 applications, 16 distinct letters, each naming its
+  own role and company. Where the profile shares no skills with the posting the letter says
+  so — *"My profile does not yet list skills overlapping this posting"* — rather than
+  inventing a match.
+- **Artifacts stored and hashed**: 32 artifacts, a resume variant and a cover letter per
+  application, each with a SHA-256 so the exact text sent can be reproduced.
+- **Answer provenance**: 128 `profile_verified`, 80 `needs_user_input`, **0 `ai_draft`**
+  anywhere, and **0 AI drafts in the answer bank**.
+- **Five sensitive questions block every application** and none was guessed: work
+  authorization, visa sponsorship, salary expectation, notice period, relocation.
+- **Duplicate application prevention works**: re-preparing a job already prepared returns
+  HTTP 422 rather than creating a second application.
+- **No outcome was recorded.** 16 applications, all `READY_FOR_REVIEW`; 0 `SUBMITTED` and
+  0 `CONFIRMED`, because nothing was submitted and there is no evidence to record.
+
+### A defect the pilot found in text sent to employers
+
+A generated letter read *"...multi-agent workflow with 5+ ."* — the project description was
+cut on character count alone, leaving a dangling quantifier before a full stop. Truncation
+now ends at a clause boundary and drops a trailing numeric quantifier whose noun was cut.
+No text is ever reworded, only whole clauses dropped, because this is resume content and
+rewording it would be fabrication. `C++` is explicitly preserved.
+
+### Two honest findings about the pilot itself
+
+**The pool is wrong for this candidate.** Only **4 India-located rows** in the entire
+7,791-job pool qualify as suitable. The configured boards — Greenhouse, Lever, Ashby,
+Workable, SmartRecruiters and five remote feeds — are overwhelmingly US and EU employers.
+This is the single biggest limit on the product's usefulness today, and it is a
+configuration and source-coverage problem, not a ranking one.
+
+**The live database mixes synthetic fixtures with real listings.** The earliest
+hand-written evaluation rows were imported with plausible-looking `boards.greenhouse.io`
+and `jobs.lever.co` URLs, and they top the feed precisely because they are the only
+listings that publish explicit requirements lists. They are indistinguishable by host. The
+benchmark excludes them, but the live feed does not.
+
+## R3.10 Version control and release hygiene
+
+Git was already initialised with one commit. The audit before staging anything found:
+
+- **The candidate's real resume PDF was tracked**, and is in commit `428ede4`. It has been
+  untracked (`git rm --cached`, the file kept on disk) and `.gitignore` now excludes
+  `*resume*.pdf` and `*resume*.docx`. **The blob is still in history** — see the blockers.
+- **A real email address and phone number were in two test files**
+  (`tests/test_matching_eval.py`, `tests/test_truthfulness.py`). Replaced with
+  `candidate@example.com` and `+91 90000 00000`; both modules still pass.
+- No API keys, tokens or assigned secrets in any tracked file. `.env.example` ships empty
+  values for `JA_API_TOKEN`, `JA_LLM_API_KEY` and `JA_EMAIL_APP_PASSWORD`.
+- `var/` (database, resumes, artifacts, logs) and `.env` are both confirmed ignored.
+- The employer contact addresses inside `tests/fixtures/eval_jobs_real.json` come from
+  public job postings and are left as published.
+
+Rollback, backup and reproducible-baseline procedures are documented in
+[RELEASE.md](RELEASE.md) sections 7 and 8.
+
+## R3.11 Remaining risks
+
+**Technical**
+
+1. **The resume blob remains in git history.** Untracking does not purge it. Until history
+   is rewritten or the repository stays private, pushing leaks the candidate's name, email,
+   phone and address.
+2. **25 pre-existing false merges persist** in the local database. They are reported on the
+   diagnostics page with their evidence and carry no applications, but the merged listings
+   cannot be recovered without a fresh discovery.
+3. **`high` confidence is unreachable on real data** (0 of 190). The badge exists and is
+   tested, but a user will never see it unless an employer publishes a requirements list.
+4. **Synthetic fixtures in the live database** outrank real listings and cannot be told
+   apart by URL.
+5. **Scoring is paged, not atomic.** A full rescore of 7,791 jobs takes four requests; a
+   crash midway leaves a partially rescored database, which is self-healing on the next run
+   but momentarily inconsistent.
+
+**Product**
+
+6. **Source coverage does not match the candidate.** 4 suitable India-located listings out
+   of 7,791 is the headline risk: the tool works and has almost nothing to show.
+7. **Recall is 0.41 against family-based labels**, because the 65 threshold excludes roles
+   whose requirements the employer never published. Lowering the threshold would trade the
+   zero false-positive rate away.
+8. **No authorized submission mechanism exists anywhere in scope**, so the final step
+   remains manual by design, not by omission.
+
+**Needs human verification**
+
+Real IMAP ingestion, actual LLM drafting output, a screen-reader pass, WCAG contrast
+measurement, Windows and Linux, and whether the two pilot listings are ones the candidate
+actually wants to apply to.
+
+---
+
 
 # Round 2 — discovery expansion and ranking quality
 

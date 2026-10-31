@@ -219,6 +219,82 @@ def test_greenhouse_maps_a_real_payload_including_the_posting_date(
     reset_settings_cache()
 
 
+def test_one_pathological_posting_does_not_discard_the_whole_board(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single over-long field must cost one posting, never the whole company board.
+
+    Observed on Greenhouse's live ``databricks`` board: one role's location is a
+    300-plus character list of US states. Before the fix a parse failure was reported
+    per board, so that one row discarded every other posting the board published.
+    """
+    monkeypatch.setenv("JA_GREENHOUSE_BOARDS", "databricks")
+    reset_settings_cache()
+    long_location = ", ".join(["California"] * 40)
+    assert len(long_location) > 300
+    payload = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Pathological Role",
+                "absolute_url": "https://example.com/1",
+                "company_name": "Databricks",
+                "location": {"name": long_location},
+            },
+            {
+                "id": 2,
+                "title": "Healthy Role",
+                "absolute_url": "https://example.com/2",
+                "company_name": "Databricks",
+                "location": {"name": "Bengaluru, India"},
+            },
+        ]
+    }
+    _stub(monkeypatch, _Response(payload))
+
+    result = GreenhouseAdapter(get_settings()).discover()
+
+    titles = {record.title for record in result.records}
+    assert "Healthy Role" in titles, "a sibling posting was lost to an unrelated bad row"
+    assert result.errors == []
+    clipped = next(r for r in result.records if r.title == "Pathological Role")
+    assert len(clipped.location or "") <= 300
+    assert (clipped.location or "").startswith("California")
+    reset_settings_cache()
+
+
+def test_an_over_long_url_skips_only_that_posting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A URL is never clipped — a truncated link is broken — so the row is skipped instead."""
+    monkeypatch.setenv("JA_GREENHOUSE_BOARDS", "databricks")
+    reset_settings_cache()
+    payload = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Unreachable Role",
+                "absolute_url": "https://example.com/" + ("x" * 3000),
+                "company_name": "Databricks",
+                "location": {"name": "Remote"},
+            },
+            {
+                "id": 2,
+                "title": "Healthy Role",
+                "absolute_url": "https://example.com/2",
+                "company_name": "Databricks",
+                "location": {"name": "Remote"},
+            },
+        ]
+    }
+    _stub(monkeypatch, _Response(payload))
+
+    result = GreenhouseAdapter(get_settings()).discover()
+
+    assert [record.title for record in result.records] == ["Healthy Role"]
+    assert result.invalid_count == 1
+    assert result.errors == []
+    reset_settings_cache()
+
+
 def test_lever_maps_a_real_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JA_LEVER_BOARDS", "spotify")
     reset_settings_cache()

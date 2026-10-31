@@ -299,6 +299,8 @@ class JobIngestService:
                         **normalized.source_metadata,
                         "dedup": decision.kind.value,
                         "normalization_warnings": normalized.warnings[:5],
+                        "observed_title": values.get("title", ""),
+                        "observed_company": values.get("company", ""),
                     },
                 )
             )

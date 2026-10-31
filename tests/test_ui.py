@@ -14,7 +14,16 @@ import requests
 from streamlit.testing.v1 import AppTest
 
 from ui.api_client import ApiClient, ApiClientError
-from ui.components import band_badge, local_date, local_time, skill_chips
+from ui.components import (
+    band_badge,
+    confidence_badge,
+    evidence_block,
+    local_date,
+    local_time,
+    skill_chips,
+    unassessable_fields,
+)
+from ui.theme import CONFIDENCE_TONES
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -168,6 +177,28 @@ class StubClient:
 
     def audit_logs(self, limit: int = 50, offset: int = 0, action: str | None = None) -> dict:
         return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+    def duplication_metrics(self, suspect_limit: int = 25) -> dict:
+        return {
+            "jobs_total": 0,
+            "sightings_total": 0,
+            "merged_sightings": 0,
+            "duplicate_rate": 0.0,
+            "exact_duplicate_sightings": 0,
+            "fuzzy_duplicate_sightings": 0,
+            "sightings_by_rule": {},
+            "multi_source_jobs": 0,
+            "cross_source_duplicate_rate": 0.0,
+            "sources_seen": [],
+            "source_pair_overlaps": {},
+            "jobs_with_application": 0,
+            "multi_source_jobs_with_application": 0,
+            "missed_merge_suspects": [],
+            "false_merge_suspects": [],
+            "normalization_collisions": [],
+            "buckets_skipped": [],
+            "is_healthy": True,
+        }
 
 
 @pytest.fixture
@@ -397,6 +428,63 @@ def test_the_diagnostics_page_renders_with_no_audit_entries(stub_pages: StubClie
     assert "No audit entries match" in _messages(app)
 
 
+def test_the_diagnostics_page_reports_duplication_rates_and_suspects(
+    stub_pages: StubClient,
+) -> None:
+    """The panel must show the rates and both failure directions, not just a headline."""
+    stub_pages.duplication_metrics = lambda suspect_limit=25: {  # type: ignore[method-assign]
+        "jobs_total": 7791,
+        "sightings_total": 8070,
+        "merged_sightings": 279,
+        "duplicate_rate": 0.0346,
+        "exact_duplicate_sightings": 0,
+        "fuzzy_duplicate_sightings": 279,
+        "sightings_by_rule": {"new": 7791, "same_fingerprint": 279},
+        "multi_source_jobs": 10,
+        "cross_source_duplicate_rate": 0.0013,
+        "sources_seen": ["greenhouse", "lever", "arbeitnow"],
+        "source_pair_overlaps": {"arbeitnow+greenhouse": 8},
+        "jobs_with_application": 14,
+        "multi_source_jobs_with_application": 1,
+        "missed_merge_suspects": [
+            {
+                "job_ids": [756, 757],
+                "titles": ["Account Executive", "Account Executive (Bengaluru, India)"],
+                "company": "Figma",
+                "sources": ["greenhouse"],
+                "title_overlap": 1.0,
+                "reason": "titles overlap by 100% at the same company",
+            }
+        ],
+        "false_merge_suspects": [
+            {
+                "job_id": 2845,
+                "stored_title": "PhD - Safety Contracts for Physical AI",
+                "observed_titles": ["PhD - Safety Contracts", "PhD - Winding Schemes"],
+                "observed_companies": ["Bosch Group"],
+                "sources": ["smartrecruiters"],
+                "title_overlap": 0.05,
+                "reason": "sighting titles overlap by only 5%",
+            }
+        ],
+        "normalization_collisions": [],
+        "buckets_skipped": [],
+        "is_healthy": False,
+    }
+
+    app = _render("diagnostics_page")
+    assert not app.exception
+    text = _messages(app)
+    assert "3.5%" in text, "the duplicate rate must be shown"
+    assert "sightings disagree" in text, "the false-merge warning must be shown"
+    assert "never deletes a job" in text, "the additive-merge guarantee must be stated"
+
+    tables = "".join(str(frame.value) for frame in app.dataframe)
+    assert "2845" in tables, "a false-merge suspect must be tabulated"
+    assert "Figma" in tables, "a missed-merge suspect must be tabulated"
+    assert "arbeitnow + greenhouse" in tables, "the overlapping source pair must be tabulated"
+
+
 def test_the_resume_page_warns_about_unanswered_sensitive_fields(
     stub_pages: StubClient,
 ) -> None:
@@ -446,3 +534,190 @@ def test_the_inbox_save_control_lives_in_a_form(stub_pages: StubClient) -> None:
     labels = [button.label for button in app.button]
     assert "Save answer" not in labels
     assert "Update" not in labels
+
+
+# --------------------------------------------------------------------------------------
+# Matching confidence on the dashboard
+# --------------------------------------------------------------------------------------
+
+LOW_CONFIDENCE_MATCH: dict[str, Any] = {
+    "total_score": 88.4,
+    "band": "review",
+    "evidence_coverage": 0.6,
+    "confidence": "low",
+    "confidence_reasons": [
+        "only 60% of the scoring weight could be assessed from this listing",
+        "the employer published no requirements list, so skills were inferred",
+    ],
+    "category_scores": {
+        "skills": {"score": 75.0, "weight": 0.58, "assessable": True, "detail": "2 inferred"},
+        "title": {"score": 100.0, "weight": 0.42, "assessable": True, "detail": "exact overlap"},
+        "freshness": {
+            "score": 0.0,
+            "weight": 0.0,
+            "assessable": False,
+            "detail": "the source gave no posting date",
+        },
+        "location": {
+            "score": 0.0,
+            "weight": 0.0,
+            "assessable": False,
+            "detail": "the listing stated no location",
+        },
+    },
+    "weights_used": {},
+    "matched_skills": ["python"],
+    "missing_required_skills": [],
+    "missing_preferred_skills": [],
+    "uncertain_requirements": ["fastapi"],
+    "explanation": ["Evidence confidence: low - only 60% of the scoring weight could be assessed."],
+    "filtered_out": False,
+    "filter_reasons": [],
+    "scorer": "rule_based_v1",
+    "scored_at": "2026-10-30T00:00:00+00:00",
+}
+
+SCORED_JOB: dict[str, Any] = {
+    "id": 7,
+    "title": "Software Engineer",
+    "company": "Terse Listings Inc",
+    "location": None,
+    "work_arrangement": "unknown",
+    "employment_type": "full_time",
+    "status": "SCORED",
+    "posted_at": None,
+    "posted_at_is_approximate": False,
+    "discovered_at": "2026-10-30T00:00:00+00:00",
+    "salary_raw": "",
+    "experience_raw": "",
+    "url": "https://example.com/jobs/7",
+    "description": "We are hiring a software engineer. Apply now.",
+    "fingerprint": "abcdef0123456789abcdef",
+    "application_method": "external",
+    "source_references": [
+        {
+            "source": "greenhouse",
+            "external_id": "7",
+            "url": "https://example.com/jobs/7",
+            "retrieved_at": "2026-10-30T00:00:00+00:00",
+            "retrieval_method": "api",
+        }
+    ],
+    "match": LOW_CONFIDENCE_MATCH,
+}
+
+
+class ScoredStubClient(StubClient):
+    """A stub holding one scored job whose evidence is deliberately weak."""
+
+    def list_jobs(self, **_: Any) -> dict:
+        return {"items": [dict(SCORED_JOB)], "total": 1, "limit": 10, "offset": 0}
+
+    def get_job(self, job_id: int) -> dict:
+        return dict(SCORED_JOB)
+
+
+@pytest.fixture
+def scored_pages(monkeypatch: pytest.MonkeyPatch) -> ScoredStubClient:
+    stub = ScoredStubClient()
+    import ui.components as components
+
+    monkeypatch.setattr(components, "get_client", lambda: stub)
+    for module in ("jobs_page", "job_detail_page"):
+        page = __import__(f"ui.views.{module}", fromlist=["render"])
+        monkeypatch.setattr(page, "get_client", lambda: stub, raising=False)
+    return stub
+
+
+def test_confidence_badge_names_the_level_and_the_coverage() -> None:
+    html = confidence_badge("low", 0.6)
+    assert "Low confidence" in html
+    assert "60% evidence" in html
+    assert "High confidence" in confidence_badge("high", 1.0)
+    assert "Unknown confidence" in confidence_badge("", None)
+
+
+def test_confidence_badge_never_uses_an_error_colour() -> None:
+    """Low confidence describes the listing's evidence, not a fault, so it is never red."""
+    for level in ("high", "medium", "low"):
+        tone = CONFIDENCE_TONES[level]
+        assert tone in {"green", "amber", "slate"}
+
+
+def test_unassessable_fields_names_each_gap_with_its_reason() -> None:
+    gaps = unassessable_fields(LOW_CONFIDENCE_MATCH["category_scores"])
+    assert any("freshness" in gap and "no posting date" in gap for gap in gaps)
+    assert any("location" in gap and "stated no location" in gap for gap in gaps)
+    assert not any("skills" in gap for gap in gaps)
+
+
+def test_evidence_block_lists_reasons_gaps_and_uncertain_fields() -> None:
+    html = evidence_block(LOW_CONFIDENCE_MATCH)
+    assert "Low confidence" in html
+    assert "Why this confidence level" in html
+    assert "only 60% of the scoring weight could be assessed" in html
+    assert "Information this listing did not provide" in html
+    assert "Uncertain fields" in html
+    assert "fastapi" in html
+
+
+def test_evidence_block_escapes_untrusted_reason_text() -> None:
+    html = evidence_block(
+        {
+            "confidence": "low",
+            "evidence_coverage": 0.5,
+            "confidence_reasons": ["<script>alert(1)</script>"],
+            "category_scores": {},
+            "uncertain_requirements": [],
+        }
+    )
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_evidence_block_states_when_everything_was_assessable() -> None:
+    html = evidence_block(
+        {
+            "confidence": "high",
+            "evidence_coverage": 1.0,
+            "confidence_reasons": [],
+            "category_scores": {"skills": {"score": 90.0, "weight": 0.35, "assessable": True}},
+            "uncertain_requirements": [],
+        }
+    )
+    assert "Every scoring category could be assessed" in html
+
+
+def test_evidence_block_is_empty_for_an_unscored_job() -> None:
+    assert evidence_block({}) == ""
+
+
+def test_the_job_feed_shows_confidence_on_every_card(scored_pages: ScoredStubClient) -> None:
+    app = _render("jobs_page")
+    assert not app.exception
+    text = _messages(app)
+    assert "Low confidence" in text
+    assert "60% evidence" in text
+    assert "only 60% of the scoring weight could be assessed" in text
+    assert "no posting date" in text
+
+
+def test_the_job_feed_still_shows_the_score_and_band(scored_pages: ScoredStubClient) -> None:
+    """Confidence is added alongside the score; it must not replace or alter it."""
+    app = _render("jobs_page")
+    text = _messages(app)
+    assert "88" in text
+    assert "Worth a look" in text
+
+
+def test_the_job_detail_page_reports_confidence_and_coverage(
+    scored_pages: ScoredStubClient,
+) -> None:
+    app = _render("job_detail_page")
+    assert not app.exception
+    text = _messages(app)
+    assert "Confidence" in text
+    assert "Evidence coverage" in text
+    assert "60%" in text
+    assert "Why this confidence level" in text
+    assert "stated no location" in text

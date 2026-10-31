@@ -491,3 +491,185 @@ def test_confidence_and_score_are_independent(session: Session, profile: Candida
     assert result.confidence == "low"
     assert result.evidence_coverage < 0.7
     assert result.band == "review"
+
+
+# --------------------------------------------------------------------------------------
+# Defects found by expanding the benchmark to 190 real listings
+# --------------------------------------------------------------------------------------
+
+
+def test_a_tie_between_target_titles_prefers_the_specific_overlap(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """Regression: "Backend Engineer - Python" scored 25/100 on title.
+
+    It tied at 42.5 against "Software Engineer", "Backend Developer" and
+    "Python Developer". Keeping the first left the match resting on the generic word
+    "engineer", so the generic-overlap cap applied to a genuine backend role.
+    """
+    job = persist_job(
+        session,
+        make_record(
+            title="Backend Engineer - Python",
+            external_id="TIE-1",
+            location="Remote",
+            required_skills=[],
+            preferred_skills=[],
+            description="Build and operate backend services for our platform team.",
+        ),
+    )
+    result = score_job(job, profile)
+    title = result.category_scores["title"]
+    assert title["score"] > 40.0, f"title still capped: {title['detail']}"
+    assert "generic" not in title["detail"]
+
+
+def test_interchangeable_role_nouns_are_not_treated_as_different_roles(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """A listing saying "Engineer" must match a target saying "Developer"."""
+    engineer = persist_job(
+        session,
+        make_record(
+            title="Backend Engineer",
+            external_id="SYN-1",
+            location="Remote",
+            required_skills=[],
+            preferred_skills=[],
+            description="Backend services work.",
+        ),
+    )
+    developer = persist_job(
+        session,
+        make_record(
+            title="Backend Developer",
+            external_id="SYN-2",
+            location="Remote",
+            required_skills=[],
+            preferred_skills=[],
+            description="Backend services work.",
+        ),
+    )
+    assert (
+        score_job(engineer, profile).category_scores["title"]["score"]
+        == score_job(developer, profile).category_scores["title"]["score"]
+    )
+
+
+@pytest.mark.parametrize("off_discipline", ["Technical Support Engineer", "Sales Engineer"])
+def test_collapsing_role_nouns_does_not_rescue_an_off_discipline_title(
+    session: Session, profile: CandidateProfile, off_discipline: str
+) -> None:
+    """The safety claim behind the synonym table, asserted rather than assumed."""
+    job = persist_job(
+        session,
+        make_record(
+            title=off_discipline,
+            external_id=f"SYN-{abs(hash(off_discipline)) % 10000}",
+            location="Remote",
+            required_skills=[],
+            preferred_skills=[],
+            description="A role at a software company.",
+        ),
+    )
+    result = score_job(job, profile)
+    assert result.category_scores["title"]["score"] <= 25.0
+    assert result.total_score < (profile.minimum_match_score or 65.0)
+
+
+def test_a_prose_bar_is_enforced_even_when_a_weaker_structured_field_exists(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """Regression: a Bosch listing carried experienceLevel "Associate" and asked for 3 years.
+
+    "Associate" normalises to a 1-year minimum, and the filter took the structured field
+    whenever it existed, so the weaker figure masked the stronger and a role three years
+    above the candidate stayed eligible.
+    """
+    job = persist_job(
+        session,
+        make_record(
+            title="Software Engineer - Python",
+            external_id="BAR-1",
+            location="Bengaluru, India",
+            experience_raw="Associate",
+            required_skills=["python"],
+            preferred_skills=[],
+            description=(
+                "Requirements\n"
+                "- 3 years of professional software development experience\n"
+                "- Strong Python\n"
+            ),
+            posted_at=utcnow() - timedelta(days=3),
+        ),
+    )
+    assert job.experience_min_years is not None and job.experience_min_years < 3.0, (
+        "fixture precondition: the structured field must be the weaker of the two figures"
+    )
+    result = score_job(job, profile)
+    assert result.filtered_out
+    assert any("3 years" in reason for reason in result.filter_reasons), result.filter_reasons
+
+
+def test_a_listing_welcoming_freshers_overrides_a_boilerplate_years_figure(
+    session: Session, profile: CandidateProfile
+) -> None:
+    job = persist_job(
+        session,
+        make_record(
+            title="Software Engineer",
+            external_id="BAR-2",
+            location="Bengaluru, India",
+            required_skills=["python"],
+            preferred_skills=[],
+            description=(
+                "Freshers welcome. Requirements\n- 3 years of experience preferred\n- Python\n"
+            ),
+            posted_at=utcnow() - timedelta(days=3),
+        ),
+    )
+    result = score_job(job, profile)
+    assert not result.filtered_out, result.filter_reasons
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Staff+ Software Engineer, Memory & Search", 4),
+        ("Sr. Controls Software Engineer - MBD", 3),
+        ("Jr. Developer", 1),
+        ("Software Engineer", None),
+    ],
+)
+def test_trailing_punctuation_does_not_hide_a_seniority_marker(
+    title: str, expected: int | None
+) -> None:
+    """Regression: "Staff+" and "Sr." escaped the seniority filter entirely.
+
+    ``normalize_text`` keeps ``+`` and ``.`` so that "c++" and "node.js" survive as
+    skills, which left these titles as the tokens ``staff+`` and ``sr.``. Neither matched
+    a marker, so both senior roles reached the review band on real discovered listings.
+    """
+    from app.services.text import seniority_level
+
+    assert seniority_level(title) == expected
+
+
+def test_a_staff_plus_role_is_filtered_for_a_fresher(
+    session: Session, profile: CandidateProfile
+) -> None:
+    job = persist_job(
+        session,
+        make_record(
+            title="Staff+ Software Engineer, Memory & Search",
+            external_id="SEN-1",
+            location="Remote",
+            required_skills=["python"],
+            preferred_skills=[],
+            description="Work on memory and search systems.",
+            posted_at=utcnow() - timedelta(days=3),
+        ),
+    )
+    result = score_job(job, profile)
+    assert result.filtered_out
+    assert any("seniority" in reason for reason in result.filter_reasons), result.filter_reasons

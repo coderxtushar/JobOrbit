@@ -242,7 +242,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m streamlit run ui/streamlit_app.py
 
 # All gates
-.venv/bin/python -m pytest                                   # 318 tests
+.venv/bin/python -m pytest                                   # 539 tests
 .venv/bin/python -m pytest --cov=app --cov-report=term
 .venv/bin/ruff check app ui tests
 .venv/bin/ruff format --check app ui tests
@@ -253,9 +253,90 @@ python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 # Compliance guarantees only
 .venv/bin/python -m pytest tests/test_compliance.py -q
 
+# Rebuild the labelled match-quality benchmark from discovered listings
+.venv/bin/python -m tests.build_eval_dataset
+.venv/bin/python -m pytest tests/test_matching_benchmark.py -q -s -k report
+
 # Delete all local data
 rm -rf var/
 ```
+
+---
+
+## 7. Rollback
+
+Everything the application owns lives in two places: the `var/` directory and the Alembic
+revision recorded inside the database. Nothing else on the machine is modified, so a
+rollback is a file copy plus a revision change.
+
+### Before any upgrade
+
+```bash
+# Stop both processes first: SQLite's WAL means a live copy can be inconsistent.
+pkill -f "uvicorn app.main"; pkill -f "streamlit run"
+cp -a var "var.backup.$(date +%Y%m%d-%H%M%S)"
+.venv/bin/alembic current            # record the revision you are rolling back to
+```
+
+### Rolling back code only
+
+The schema is forward-compatible within a revision, so if the new code misbehaves but the
+revision has not changed, check out the previous commit and restart. No data step is
+needed.
+
+```bash
+git log --oneline -5
+git checkout <previous-commit>
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+### Rolling back a migration
+
+```bash
+.venv/bin/alembic history            # list revisions oldest to newest
+.venv/bin/alembic downgrade -1       # one step back
+.venv/bin/alembic downgrade <revision>
+```
+
+Every revision in this project has a tested `downgrade`, verified by
+`alembic upgrade head` → `alembic check` → `alembic downgrade base` on an empty database.
+A downgrade **drops the columns and tables the revision added**, so any data held only in
+those columns is lost — restore the backup instead if that data matters.
+
+### Restoring from a backup
+
+```bash
+pkill -f "uvicorn app.main"; pkill -f "streamlit run"
+rm -rf var && cp -a var.backup.<timestamp> var
+.venv/bin/alembic current            # confirm the revision matches the checked-out code
+```
+
+### Starting clean
+
+```bash
+rm -rf var/ && .venv/bin/alembic upgrade head
+```
+
+This deletes the database, every uploaded resume and every generated artifact. It is the
+documented way to remove all personal data from the machine.
+
+---
+
+## 8. Reproducible baseline
+
+A checkout is reproducible when all five hold:
+
+| Check | Command | Expected |
+|---|---|---|
+| Dependencies pinned transitively | `.venv/bin/pip install -r requirements.lock.txt` | 93 pinned packages |
+| Schema matches the models | `.venv/bin/alembic check` | `No new upgrade operations detected.` |
+| Single migration head | `.venv/bin/alembic heads` | one revision, marked `(head)` |
+| Tests green with no network | `.venv/bin/python -m pytest` | 539 passed |
+| Match quality not regressed | `.venv/bin/python -m pytest tests/test_matching_benchmark.py` | gates against `tests/fixtures/eval_baseline.json` |
+
+The benchmark fixtures are versioned on purpose: `eval_jobs_real.json` holds the labelled
+listings and `eval_baseline.json` the measured numbers, so a ranking change that moves
+match quality fails the build until the new numbers are recorded deliberately.
 
 ---
 

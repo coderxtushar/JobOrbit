@@ -27,6 +27,7 @@ class JobQuery:
     min_score: float | None = None
     max_age_days: int | None = None
     include_duplicates: bool = False
+    unscored_only: bool = False
     profile_id: int | None = None
     sort_by: str = "score"
     descending: bool = True
@@ -47,6 +48,19 @@ _BAND_RANK = case(
     (JobMatch.band == "high", 0),
     (JobMatch.band == "review", 1),
     (JobMatch.band == "low", 2),
+    else_=3,
+)
+
+#: Within one band, evidence decides the order before the number does. Measured on 7,791
+#: real listings: three rows whose title, company and location were each a single character
+#: scored 100.0 from the one category that could be assessed (20% coverage, low confidence)
+#: and sat at the top of the review band, above fully-assessed matches at 71-77. The band
+#: gate had already demoted them; this orders what is left inside the band, and like the
+#: band gate it changes only the ordering, never the score.
+_CONFIDENCE_RANK = case(
+    (JobMatch.confidence == "high", 0),
+    (JobMatch.confidence == "medium", 1),
+    (JobMatch.confidence == "low", 2),
     else_=3,
 )
 
@@ -156,6 +170,12 @@ class JobRepository:
             cutoff = utcnow() - timedelta(days=query.max_age_days)
             # A job with no posting date is kept: absence of a date is not evidence of age.
             statement = statement.where(or_(Job.posted_at.is_(None), Job.posted_at >= cutoff))
+        if query.unscored_only and query.profile_id is not None:
+            statement = statement.where(
+                Job.id.notin_(
+                    select(JobMatch.job_id).where(JobMatch.profile_id == query.profile_id)
+                )
+            )
         if query.min_score is not None and query.profile_id is not None:
             statement = statement.where(
                 Job.id.in_(
@@ -194,7 +214,12 @@ class JobRepository:
 
         ordering = column.desc() if query.descending else column.asc()
         if band_first and query.descending:
-            statement = statement.order_by(_BAND_RANK.asc(), ordering.nullslast(), Job.id.desc())
+            statement = statement.order_by(
+                _BAND_RANK.asc(),
+                _CONFIDENCE_RANK.asc(),
+                ordering.nullslast(),
+                Job.id.desc(),
+            )
         else:
             statement = statement.order_by(ordering.nullslast(), Job.id.desc())
         statement = statement.limit(query.limit).offset(query.offset)

@@ -315,6 +315,25 @@ def _foreign_families(text: str) -> set[str]:
     return {family for family, markers in FOREIGN_ROLE_FAMILIES.items() if words & markers}
 
 
+#: Role nouns that name the same job. A profile saying "Backend Developer" and a listing
+#: saying "Backend Engineer" describe one role, but comparing the words literally scored
+#: that pair at 42/100 on title fit — the shared word "backend" counted for only half the
+#: target's tokens because the differing nouns stayed in the denominator. Measured on the
+#: benchmark, this held 39 of 69 suitable listings in the low band. Collapsing them cannot
+#: inflate an unsuitable match: an overlap of nothing but these words is still generic-only
+#: and still capped.
+_ROLE_NOUN_SYNONYMS: dict[str, str] = {
+    "developer": "engineer",
+    "programmer": "engineer",
+    "engineering": "engineer",
+    "dev": "engineer",
+}
+
+
+def _comparable_title_tokens(title: str) -> set[str]:
+    return {_ROLE_NOUN_SYNONYMS.get(token, token) for token in title_tokens(title)}
+
+
 def _score_title(job: Job, profile: CandidateProfile) -> CategoryScore:
     targets = [title for title in profile.target_titles if title.strip()]
     if not targets:
@@ -326,7 +345,7 @@ def _score_title(job: Job, profile: CandidateProfile) -> CategoryScore:
             assessable=False,
         )
 
-    job_tokens = title_tokens(job.title)
+    job_tokens = _comparable_title_tokens(job.title)
     if not job_tokens:
         return CategoryScore(
             "title",
@@ -339,16 +358,24 @@ def _score_title(job: Job, profile: CandidateProfile) -> CategoryScore:
     best_score = 0.0
     best_title = ""
     best_overlap: set[str] = set()
+    best_specific = False
     for target in targets:
-        target_tokens = title_tokens(target)
+        target_tokens = _comparable_title_tokens(target)
         if not target_tokens:
             continue
         shared = job_tokens & target_tokens
         overlap = len(shared) / len(target_tokens)
         similarity = jaccard(job_tokens, target_tokens)
         combined = 100.0 * (0.7 * overlap + 0.3 * similarity)
-        if combined > best_score:
+        specific = bool(shared - _GENERIC_ROLE_TOKENS)
+        # Ties are common and the choice decides the score: "Backend Engineer - Python" ties
+        # at 42.5 against "Software Engineer", "Backend Developer" and "Python Developer",
+        # and keeping the first left the match resting on the generic word "engineer", which
+        # the generic cap then cut to 25. Preferring a target that shares a word saying what
+        # the role does keeps the cap for titles that genuinely only share a role noun.
+        if (combined, specific) > (best_score, best_specific):
             best_score, best_title, best_overlap = combined, target, shared
+            best_specific = specific
 
     if best_score == 0.0:
         return CategoryScore(

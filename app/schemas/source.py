@@ -108,3 +108,55 @@ class EstimatedMetrics(BaseModel):
 
     estimated_minutes_saved: int
     basis: str
+
+
+class MissedMergeSuspectRead(BaseModel):
+    job_ids: list[int]
+    titles: list[str]
+    company: str
+    sources: list[str]
+    title_overlap: float
+    reason: str
+
+
+class FalseMergeSuspectRead(BaseModel):
+    job_id: int
+    stored_title: str
+    observed_titles: list[str]
+    observed_companies: list[str]
+    sources: list[str]
+    title_overlap: float
+    reason: str
+
+
+class NormalizationCollisionRead(BaseModel):
+    normalized_company: str
+    raw_companies: list[str]
+    job_count: int
+
+
+class DuplicationReportRead(BaseModel):
+    """Counted duplication facts, plus suspects a human should judge."""
+
+    jobs_total: int
+    sightings_total: int
+    merged_sightings: int
+    duplicate_rate: float
+
+    exact_duplicate_sightings: int
+    fuzzy_duplicate_sightings: int
+    sightings_by_rule: dict[str, int]
+
+    multi_source_jobs: int
+    cross_source_duplicate_rate: float
+    sources_seen: list[str]
+    source_pair_overlaps: dict[str, int]
+
+    jobs_with_application: int
+    multi_source_jobs_with_application: int
+
+    missed_merge_suspects: list[MissedMergeSuspectRead]
+    false_merge_suspects: list[FalseMergeSuspectRead]
+    normalization_collisions: list[NormalizationCollisionRead]
+    buckets_skipped: list[str]
+    is_healthy: bool

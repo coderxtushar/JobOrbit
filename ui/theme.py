@@ -57,6 +57,12 @@ BANDS: dict[str, tuple[str, str, str]] = {
 }
 UNSCORED = ("Unscored", TEXT_MUTED, SLATE_100)
 
+#: confidence label -> tone. Low confidence is slate, not red: it means the listing did not
+#: say enough to judge, which is a statement about the evidence rather than about the job or
+#: the candidate. The word is always rendered beside the colour, so the colour never carries
+#: the meaning alone.
+CONFIDENCE_TONES: dict[str, str] = {"high": "green", "medium": "amber", "low": "slate"}
+
 #: Monogram tile palette. A company always gets the same colour because the index is a
 #: hash of its name, so the feed stays visually stable between runs.
 MONOGRAM_COLOURS: tuple[tuple[str, str], ...] = (
@@ -205,6 +211,20 @@ section[data-testid="stSidebar"] [data-testid="stAlert"] p {{ color:#B9C0D4 !imp
 }}
 .ja-cat-detail {{ grid-column:1 / -1; font-size:.745rem; color:#5F6878;
                   margin:-.1rem 0 .34rem; line-height:1.5; }}
+
+/* Evidence / confidence block */
+.ja-ev {{ margin:.35rem 0 .1rem; }}
+.ja-ev-head {{
+  font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.045em;
+  color:var(--text-muted); margin:.45rem 0 .18rem;
+}}
+.ja-ev-list {{ margin:0; padding-left:1.05rem; }}
+.ja-ev-list li {{ font-size:.785rem; color:#5F6878; line-height:1.55; margin:.06rem 0; }}
+.ja-ev-bar {{
+  display:block; width:100%; height:6px; border-radius:999px; background:#E4E7EE;
+  overflow:hidden; margin:.2rem 0 .1rem;
+}}
+.ja-ev-bar-fill {{ display:block; height:6px; border-radius:999px; }}
 
 /* Metric cards */
 .ja-metric {{
@@ -385,6 +405,90 @@ def category_bars(category_scores: dict[str, Any], show_detail: bool = True) -> 
             rows.append(f'<span class="ja-cat-detail">{detail}</span>')
         rows.append("</div>")
     return "".join(rows)
+
+
+def confidence_badge(confidence: str, coverage: float | None = None) -> str:
+    """A pill naming the confidence level, with the share of weight that was assessable."""
+    key = str(confidence or "").strip().lower()
+    tone = CONFIDENCE_TONES.get(key, "slate")
+    text = f"{key.title() or 'Unknown'} confidence"
+    if coverage is not None:
+        text += f" · {float(coverage) * 100:.0f}% evidence"
+    return pill(text, tone)
+
+
+def coverage_bar(coverage: float | None, confidence: str = "") -> str:
+    """A thin bar showing how much of the scoring weight the listing supported."""
+    if coverage is None:
+        return ""
+    tone = CONFIDENCE_TONES.get(str(confidence or "").strip().lower(), "slate")
+    _background, colour = TONES.get(tone, TONES["slate"])
+    width = max(0.0, min(float(coverage) * 100, 100.0))
+    return (
+        f'<span class="ja-ev-bar"><span class="ja-ev-bar-fill" '
+        f'style="width:{width:.1f}%;background:{colour}"></span></span>'
+    )
+
+
+def unassessable_fields(category_scores: dict[str, Any]) -> list[str]:
+    """Name the categories the listing left unjudgeable, with the stated reason."""
+    missing: list[str] = []
+    for name, data in (category_scores or {}).items():
+        if not isinstance(data, dict) or data.get("assessable", True):
+            continue
+        label = str(name).replace("_", " ")
+        detail = str(data.get("detail") or "").strip()
+        missing.append(f"{label} — {detail}" if detail else label)
+    return missing
+
+
+def evidence_block(match: dict[str, Any]) -> str:
+    """Why the confidence label is what it is, and what the listing did not say.
+
+    Rendered separately from the score so the two are never read as one number: the score
+    answers "how relevant", this answers "how much was there to go on".
+    """
+    if not match:
+        return ""
+    coverage = match.get("evidence_coverage")
+    parts = [
+        '<div class="ja-ev">',
+        confidence_badge(match.get("confidence", ""), coverage),
+        coverage_bar(coverage, match.get("confidence", "")),
+    ]
+
+    reasons = [str(reason) for reason in (match.get("confidence_reasons") or [])]
+    if reasons:
+        parts.append(
+            '<div class="ja-ev-head">Why this confidence level</div><ul class="ja-ev-list">'
+        )
+        parts.extend(f"<li>{esc(reason)}</li>" for reason in reasons)
+        parts.append("</ul>")
+    else:
+        parts.append(
+            '<div class="ja-ev-list"><li>Every scoring category could be assessed from '
+            "this listing.</li></div>"
+        )
+
+    missing = unassessable_fields(match.get("category_scores") or {})
+    if missing:
+        parts.append(
+            '<div class="ja-ev-head">Information this listing did not provide</div>'
+            '<ul class="ja-ev-list">'
+        )
+        parts.extend(f"<li>{esc(item)}</li>" for item in missing)
+        parts.append("</ul>")
+
+    uncertain = [str(item) for item in (match.get("uncertain_requirements") or [])]
+    if uncertain:
+        parts.append(
+            '<div class="ja-ev-head">Uncertain fields</div><ul class="ja-ev-list">'
+            f"<li>These skills were inferred from the description, not stated by the "
+            f"employer: {esc(', '.join(uncertain))}.</li></ul>"
+        )
+
+    parts.append("</div>")
+    return "".join(parts)
 
 
 def metric_card(label: str, value: Any, caption: str = "", kind: str = "counted") -> str:

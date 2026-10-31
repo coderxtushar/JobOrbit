@@ -104,14 +104,16 @@ def _seniority_reasons(
 
     required = job.experience_min_years
     source = "requires"
-    if required is None and not evidence.mentions_fresher_opening:
-        # The bar exists only in the prose. "At least 7+ years of relevant professional
-        # experience" is as binding as a structured field, and ignoring it let roles
-        # demanding five to seven years stay eligible and score in the high band for a
-        # candidate with months. A listing that also says it welcomes freshers is trusted
-        # over a years figure, because that figure is usually boilerplate.
-        required = evidence.stated_min_years
-        source = "states in its description that it requires"
+    if not evidence.mentions_fresher_opening and evidence.stated_min_years is not None:
+        # Both figures are the employer's own, and the binding requirement is the higher
+        # one. Taking the structured field whenever it exists let the weaker figure mask
+        # the stronger: "Software Engineer - Python" carries experienceLevel "Associate",
+        # which normalises to 1 year, while its text asks for 3 — so a role three years
+        # above the candidate stayed eligible. A listing that also welcomes freshers is
+        # trusted over a years figure, because that figure is usually boilerplate.
+        if required is None or evidence.stated_min_years > required:
+            required = evidence.stated_min_years
+            source = "states in its description that it requires"
 
     if (
         required is not None

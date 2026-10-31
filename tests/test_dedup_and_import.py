@@ -41,6 +41,59 @@ def test_fingerprint_distinguishes_genuinely_different_jobs() -> None:
     assert left != right
 
 
+def test_different_non_latin_titles_are_not_merged_into_one_job() -> None:
+    """Two unrelated CJK roles at one company and city must not share a fingerprint.
+
+    Measured on a live SmartRecruiters run: ``normalize_text`` keeps only ``[a-z0-9+#.-]``,
+    so every Chinese and Japanese title reduced to the empty string and the postings were
+    merged into a single job, losing the distinct listings.
+    """
+    left = compute_fingerprint("半導体采购质量工程师", "Bosch Group", "Suzhou, China", "")
+    right = compute_fingerprint("产品认证项目经理", "Bosch Group", "Suzhou, China", "")
+    assert left != right
+
+
+def test_identical_non_latin_titles_still_merge() -> None:
+    left = compute_fingerprint("ソフトウェアエンジニア", "Bosch Group", "Tokyo, Japan", "")
+    right = compute_fingerprint("ソフトウェアエンジニア", "Bosch Group", "Tokyo, Japan", "")
+    assert left == right
+
+
+def test_the_non_latin_fallback_leaves_ascii_fingerprints_untouched() -> None:
+    """The fallback must not change a single already-stored fingerprint.
+
+    It runs only when the Latin core is empty *and* the title has a non-ASCII alphanumeric
+    character, so a title made entirely of recruiter noise keeps its existing value.
+    """
+    noise_only = compute_fingerprint("Intern", "Acme", "Bengaluru", DESCRIPTION)
+    also_noise_only = compute_fingerprint("Internship - Remote", "Acme", "Bengaluru", DESCRIPTION)
+    assert noise_only == also_noise_only
+
+
+def test_a_single_word_before_a_dash_does_not_become_the_whole_identity() -> None:
+    """ "PhD - <topic>" postings must stay distinct from one another.
+
+    Measured on a live SmartRecruiters run: the prefix before the first dash was taken
+    unconditionally, so every Bosch research opening reduced to the core title "phd" and
+    dozens of unrelated openings at one city merged into a single job.
+    """
+    left = compute_fingerprint(
+        "PhD - Safety Contracts for Physical AI", "Bosch Group", "Renningen, Germany", ""
+    )
+    right = compute_fingerprint(
+        "PhD - A Generator of Optimized Winding Schemes", "Bosch Group", "Renningen, Germany", ""
+    )
+    assert left != right
+
+
+def test_a_substantial_prefix_still_strips_the_location_suffix() -> None:
+    decorated = compute_fingerprint(
+        "Software Engineer (Backend) - Bengaluru | Urgent", "Acme", "Bengaluru", DESCRIPTION
+    )
+    plain = compute_fingerprint("Software Engineer - Bengaluru", "Acme", "Bengaluru", DESCRIPTION)
+    assert decorated == plain
+
+
 def test_description_signature_is_order_independent() -> None:
     first = description_signature("Python FastAPI PostgreSQL Docker Kubernetes")
     second = description_signature("Kubernetes Docker PostgreSQL FastAPI Python")

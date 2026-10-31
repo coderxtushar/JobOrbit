@@ -94,17 +94,17 @@ Actual output, from this machine (macOS, CPython 3.12.15):
 ```
 ........................................................................ [ 89%]
 ...................................................                      [100%]
-484 passed in 40.33s
+539 passed in 41.31s
 ```
 
 All quality gates, as run in CI:
 
 | Gate | Command | Result |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest` | 484 passed |
+| Tests | `.venv/bin/python -m pytest` | 539 passed |
 | Lint | `.venv/bin/ruff check app ui tests` | clean |
 | Format | `.venv/bin/ruff format --check app ui tests` | clean |
-| Types | `.venv/bin/mypy app` | no issues in 74 files |
+| Types | `.venv/bin/mypy app` | no issues in 75 files |
 | Static security | `.venv/bin/bandit -r app ui -ll` | 0 medium/high |
 | Dependency CVEs | `.venv/bin/pip-audit` | see `security-baseline.txt` |
 
@@ -423,7 +423,7 @@ app/
   sources/  base.py  registry.py  manual_import.py  email_alerts.py
             linkedin.py  indeed.py  naukri.py  wellfound.py
 ui/         streamlit_app.py  api_client.py  components.py  views/
-tests/      conftest.py + 18 test modules (484 tests) + fixtures/ (labelled benchmark)
+tests/      conftest.py + 21 test modules (539 tests) + fixtures/ (labelled benchmark)
 docs/       PLAN.md  COMPLIANCE.md  ARCHITECTURE.md  SCHEMA.md  API.md  DESIGN.md
             RELEASE.md
 .github/    workflows/ci.yml - tests, lint, types, security on 3.11/3.12/3.13

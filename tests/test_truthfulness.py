@@ -37,7 +37,7 @@ from tests.conftest import make_record, persist_job
 RESUME_TEXT = "\n".join(
     [
         "TUSHAR GAUTAM",
-        "Gurgaon, Haryana | +91 6398505993 | tushar.gautam.dev@gmail.com",
+        "Gurgaon, Haryana | +91 90000 00000 | candidate@example.com",
         "EDUCATION",
         "Invertis University",
         "Bachelor of Technology in Computer Science Engineering",
@@ -80,7 +80,7 @@ def real_profile(session: Session) -> CandidateProfile:
         profile,
         {
             "full_name": "Tushar Gautam",
-            "email": "tushar.gautam.dev@gmail.com",
+            "email": "candidate@example.com",
             "experience_level": "fresher",
             "years_experience": 0.4,
             "graduation_date": "2026",

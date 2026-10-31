@@ -40,7 +40,13 @@ from app.sources.base import (
     SourceAdapter,
     SourceUnavailable,
 )
-from app.sources.http_fetch import fetch_json, parse_epoch_seconds, parse_iso
+from app.sources.http_fetch import (
+    build_record,
+    fetch_json,
+    parse_epoch_seconds,
+    parse_iso,
+    usable_records,
+)
 
 logger = get_logger(__name__)
 
@@ -190,7 +196,7 @@ class ArbeitnowAdapter(FeedAdapter):
         if not isinstance(entries, list):
             raise ValueError("'data' was present but was not an array")
 
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in entries:
             if not isinstance(entry, dict):
@@ -204,7 +210,7 @@ class ArbeitnowAdapter(FeedAdapter):
                 continue
             job_types = entry.get("job_types")
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("slug", "")).strip() or None,
                     title=title,
@@ -220,7 +226,7 @@ class ArbeitnowAdapter(FeedAdapter):
                     source_metadata={"tags": _string_list(entry.get("tags"))[:10]},
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 class RemoteOkAdapter(FeedAdapter):
@@ -249,7 +255,7 @@ class RemoteOkAdapter(FeedAdapter):
     def parse_feed(self, payload: Any) -> tuple[list[RawJobRecord], int]:
         if not isinstance(payload, list):
             raise ValueError("expected a JSON array of postings")
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in payload:
             if not isinstance(entry, dict):
@@ -264,7 +270,7 @@ class RemoteOkAdapter(FeedAdapter):
                 skipped += 1
                 continue
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("id", "")).strip() or None,
                     title=title,
@@ -284,7 +290,7 @@ class RemoteOkAdapter(FeedAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 class RemotiveAdapter(FeedAdapter):
@@ -320,7 +326,7 @@ class RemotiveAdapter(FeedAdapter):
         if not isinstance(jobs, list):
             raise ValueError("'jobs' was present but was not an array")
 
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in jobs:
             if not isinstance(entry, dict):
@@ -333,7 +339,7 @@ class RemotiveAdapter(FeedAdapter):
                 skipped += 1
                 continue
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("id", "")).strip() or None,
                     title=title,
@@ -350,7 +356,7 @@ class RemotiveAdapter(FeedAdapter):
                     source_metadata={"category": entry.get("category")},
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 class HimalayasAdapter(FeedAdapter):
@@ -397,7 +403,7 @@ class HimalayasAdapter(FeedAdapter):
         if not isinstance(jobs, list):
             raise ValueError("'jobs' was present but was not an array")
 
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in jobs:
             if not isinstance(entry, dict):
@@ -413,7 +419,7 @@ class HimalayasAdapter(FeedAdapter):
             if not description.strip():
                 description = str(entry.get("excerpt", "") or "")
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("guid", "")).strip() or None,
                     title=title,
@@ -433,7 +439,7 @@ class HimalayasAdapter(FeedAdapter):
                     },
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 class JobicyAdapter(FeedAdapter):
@@ -477,7 +483,7 @@ class JobicyAdapter(FeedAdapter):
         if not isinstance(jobs, list):
             raise ValueError("'jobs' was present but was not an array")
 
-        records: list[RawJobRecord] = []
+        records: list[RawJobRecord | None] = []
         skipped = 0
         for entry in jobs:
             if not isinstance(entry, dict):
@@ -493,7 +499,7 @@ class JobicyAdapter(FeedAdapter):
             if not description.strip():
                 description = str(entry.get("jobExcerpt", "") or "")
             records.append(
-                RawJobRecord(
+                build_record(
                     source=self.source,
                     external_id=str(entry.get("id", "")).strip() or None,
                     title=title,
@@ -510,7 +516,7 @@ class JobicyAdapter(FeedAdapter):
                     source_metadata={"job_level": entry.get("jobLevel")},
                 )
             )
-        return records, skipped
+        return usable_records(records, skipped)
 
 
 def _string_list(value: Any) -> list[str]:

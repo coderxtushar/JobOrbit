@@ -253,7 +253,7 @@ def discover_jobs(
 @router.post("/score", response_model=ScoreSummary, summary="Score jobs against the profile")
 def score_jobs(payload: ScoreRequest, session: DbSession, profile: Profile) -> ScoreSummary:
     report = ScoringService(session).score_many(
-        profile, job_ids=payload.job_ids, rescore_all=payload.rescore_all
+        profile, job_ids=payload.job_ids, rescore_all=payload.rescore_all, offset=payload.offset
     )
     return ScoreSummary(
         scored=report.scored,
@@ -261,6 +261,7 @@ def score_jobs(payload: ScoreRequest, session: DbSession, profile: Profile) -> S
         high=report.high,
         review=report.review,
         low=report.low,
+        remaining=report.remaining,
         scorer=report.scorer,
         failures=report.failures[:25],
     )

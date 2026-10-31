@@ -8,7 +8,9 @@ from ui.api_client import ApiClientError
 from ui.components import (
     api_error,
     category_bars,
+    confidence_badge,
     empty_state,
+    evidence_block,
     get_client,
     local_time,
     metric_row,
@@ -64,11 +66,23 @@ def render() -> None:
             score_ring(match.get("total_score"), match.get("band", ""), size=84),
             unsafe_allow_html=True,
         )
+        if match:
+            st.markdown(
+                confidence_badge(match.get("confidence", ""), match.get("evidence_coverage")),
+                unsafe_allow_html=True,
+            )
     with cards:
+        coverage = match.get("evidence_coverage")
         metric_row(
             [
-                ("Match score", match.get("total_score", "—"), ""),
+                ("Match score", match.get("total_score", "—"), "relevance only"),
                 ("Band", match.get("band", "not scored"), ""),
+                ("Confidence", match.get("confidence", "—"), "strength of evidence"),
+                (
+                    "Evidence coverage",
+                    f"{float(coverage) * 100:.0f}%" if coverage is not None else "—",
+                    "share of weight assessable",
+                ),
                 ("Status", job["status"], ""),
                 ("Platforms", len(job["source_references"]), "sightings"),
             ]
@@ -133,6 +147,12 @@ def render() -> None:
         st.caption(
             "Categories that could not be assessed are given zero weight and the remaining "
             "weights are rescaled, so missing data does not drag the total toward the middle."
+        )
+        st.markdown("**Evidence behind this score**")
+        st.markdown(evidence_block(match), unsafe_allow_html=True)
+        st.caption(
+            "Relevance and confidence are separate questions. The score is never adjusted "
+            "for weak evidence — only the band is held back, so the number stays auditable."
         )
         st.markdown(
             "**You have:** " + skill_chips(match.get("matched_skills") or [], "#d8f0e2"),
