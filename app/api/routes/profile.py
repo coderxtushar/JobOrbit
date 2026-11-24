@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 
 from app.api.deps import Authorized, DbSession, Profile
+from app.db.models import utcnow
 from app.db.repositories import AuditRepository, ProfileRepository
 from app.schemas.profile import ProfileRead, ProfileUpdate
 
@@ -50,5 +51,26 @@ def update_profile(payload: ProfileUpdate, session: DbSession, profile: Profile)
         entity_type="candidate_profile",
         entity_id=updated.id,
         detail={"fields": sorted(changes)},
+    )
+    return _to_read(updated)
+
+
+@router.post(
+    "/onboarding-complete",
+    response_model=ProfileRead,
+    summary="Mark the preferences wizard as finished",
+)
+def complete_onboarding(session: DbSession, profile: Profile) -> ProfileRead:
+    """Stamp completion server-side so the client cannot backdate it.
+
+    Completion only records that the wizard was walked through. It never implies the
+    sensitive fields were answered - ``unanswered_sensitive_fields`` stays the source of
+    truth for that, and an unanswered field still blocks every application.
+    """
+    updated = ProfileRepository(session).update(profile, {"onboarding_completed_at": utcnow()})
+    AuditRepository(session).record(
+        "profile.onboarding_completed",
+        entity_type="candidate_profile",
+        entity_id=updated.id,
     )
     return _to_read(updated)

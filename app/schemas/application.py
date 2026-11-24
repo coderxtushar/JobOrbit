@@ -66,6 +66,8 @@ class ApplicationRead(BaseModel):
     job_company: str = ""
     job_url: str = ""
     blocking_questions: list[str] = Field(default_factory=list)
+    next_action: str = ""
+    employer_page_opened: bool = False
 
 
 class ApplicationEventRead(BaseModel):

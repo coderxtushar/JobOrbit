@@ -3,7 +3,9 @@
 Logs are emitted as single-line JSON so they can be grepped or piped into any log tool.
 Two properties are enforced here rather than left to call sites:
 
-* Known secret-bearing keys are redacted.
+* Known secret-bearing keys are redacted, and string values pass through
+  :func:`app.services.redaction.redact`, which removes email addresses, phone numbers and
+  tokens wherever they appear.
 * Long free-text values are truncated, so a full resume or job description can never be
   dumped into a log file by accident.
 """
@@ -52,6 +54,12 @@ def scrub(value: Any, _depth: int = 0) -> Any:
         }
     if isinstance(value, list | tuple | set):
         return [scrub(item, _depth + 1) for item in list(value)[:50]]
+    if isinstance(value, str):
+        # Imported lazily: redaction is a service-layer module and this one is imported by
+        # everything, including the settings bootstrap.
+        from app.services.redaction import redact
+
+        value = redact(value)
     if isinstance(value, str) and len(value) > _MAX_VALUE_CHARS:
         return value[:_MAX_VALUE_CHARS] + f"...<truncated {len(value) - _MAX_VALUE_CHARS} chars>"
     if isinstance(value, int | float | bool) or value is None:

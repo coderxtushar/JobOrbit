@@ -75,3 +75,19 @@ class MatchRepository:
             )
             or 0
         )
+
+    def confidence_counts(self, profile_id: int) -> dict[str, int]:
+        rows = self._session.execute(
+            select(JobMatch.confidence, func.count(JobMatch.id))
+            .where(JobMatch.profile_id == profile_id)
+            .group_by(JobMatch.confidence)
+        ).all()
+        return {confidence: count for confidence, count in rows}
+
+    def scored_count(self, profile_id: int) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count(JobMatch.id)).where(JobMatch.profile_id == profile_id)
+            )
+            or 0
+        )

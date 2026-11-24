@@ -70,7 +70,12 @@ class UtcDateTime(TypeDecorator[datetime]):
 class Base(DeclarativeBase):
     """Declarative base for every model."""
 
-    type_annotation_map = {dict[str, Any]: JSON, list[str]: JSON, list[dict[str, Any]]: JSON}
+    type_annotation_map = {
+        dict[str, Any]: JSON,
+        list[str]: JSON,
+        list[int]: JSON,
+        list[dict[str, Any]]: JSON,
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -195,6 +200,34 @@ class BatchItemStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class SubmissionState(str, enum.Enum):
+    """Lifecycle of one *submission attempt* against one provider.
+
+    Separate from :class:`ApplicationStatus`, which tracks the application record the user
+    curates. This tracks a single dispatch, which can be refused by policy or finish with
+    an outcome nobody can determine.
+
+    The three-way split at the end is the part that matters. ``SUBMITTED_CONFIRMED`` means
+    the provider acknowledged receipt and is the only state reportable as a sent
+    application. ``FAILED`` means the attempt provably never arrived, so retrying is safe.
+    ``OUTCOME_UNKNOWN`` means the request left this machine and nothing came back, so it is
+    never retried automatically — collapsing it into either neighbour either invents a
+    submission or authorises a duplicate.
+    """
+
+    DISCOVERED = "discovered"
+    ELIGIBLE = "eligible"
+    PREPARED = "prepared"
+    READY_TO_SUBMIT = "ready_to_submit"
+    SUBMISSION_IN_PROGRESS = "submission_in_progress"
+    SUBMITTED_CONFIRMED = "submitted_confirmed"
+    FAILED = "failed"
+    BLOCKED_MISSING_INFO = "blocked_missing_info"
+    REQUIRES_USER_ACTION = "requires_user_action"
+    UNSUPPORTED_PLATFORM = "unsupported_platform"
+    OUTCOME_UNKNOWN = "outcome_unknown"
+
+
 class Outcome(str, enum.Enum):
     PENDING = "pending"
     NO_RESPONSE = "no_response"
@@ -275,6 +308,9 @@ class CandidateProfile(Base):
     preferred_companies: Mapped[list[str]] = mapped_column(default=list)
     preferred_industries: Mapped[list[str]] = mapped_column(default=list)
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    #: The auto-apply scope the user last authorised (score floor, platforms, locations...),
+    #: kept so the next preflight starts from it. Never read as permission to dispatch.
+    autoapply_preferences: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
@@ -735,6 +771,9 @@ class ApplicationArtifact(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     content_sha256: Mapped[str] = mapped_column(String(64), default="", index=True)
     byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    #: Set when the artifact was part of a dispatched submission. A locked artifact is the
+    #: record of what an employer received, so it can no longer be edited or deleted.
+    locked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, index=True)
 
     __table_args__ = (
@@ -859,3 +898,371 @@ class SavedSearch(Base):
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (UniqueConstraint("profile_id", "name", name="uq_saved_search_profile_name"),)
+
+
+class AutoApplyRun(Base):
+    """One end-to-end run: discover, filter, prepare, submit where permitted, verify.
+
+    Distinct from :class:`BatchRun`, which stops at ``READY_FOR_REVIEW`` and never contacts
+    a provider. The counters are kept separately for the same reason the states are: a
+    prepared application and a confirmed one are different claims, and a single
+    ``processed`` number would let a screen blur them.
+    """
+
+    __tablename__ = "autoapply_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("candidate_profile.id", ondelete="CASCADE"), index=True
+    )
+
+    status: Mapped[BatchStatus] = _enum_column(BatchStatus, default=BatchStatus.PENDING, index=True)
+    #: A dry run prepares everything and stops before dispatch. Nothing is sent.
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=True)
+    pause_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    concurrency: Mapped[int] = mapped_column(Integer, default=4)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=2)
+    #: Ceiling on dispatches this run may make, independent of how many jobs are eligible.
+    max_submissions: Mapped[int] = mapped_column(Integer, default=100)
+    max_discover: Mapped[int] = mapped_column(Integer, default=200)
+    targets: Mapped[dict[str, Any]] = mapped_column(default=dict)
+
+    discovered_count: Mapped[int] = mapped_column(Integer, default=0)
+    eligible_count: Mapped[int] = mapped_column(Integer, default=0)
+    prepared_count: Mapped[int] = mapped_column(Integer, default=0)
+    confirmed_count: Mapped[int] = mapped_column(Integer, default=0)
+    blocked_count: Mapped[int] = mapped_column(Integer, default=0)
+    needs_user_count: Mapped[int] = mapped_column(Integer, default=0)
+    unsupported_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    unknown_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    message: Mapped[str] = mapped_column(Text, default="")
+    #: Written by the worker between items. A RUNNING run whose heartbeat is older than
+    #: ``JA_RUN_STALE_AFTER_S`` belongs to a worker that died, and is recovered on start-up.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    #: The preflight summary the user saw when authorising, and the exact job ids approved.
+    preflight: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    approved_job_ids: Mapped[list[int]] = mapped_column(default=list)
+
+    attempts: Mapped[list[SubmissionAttempt]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    __table_args__ = (
+        CheckConstraint("concurrency BETWEEN 1 AND 16", name="ck_autoapply_concurrency_range"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 10", name="ck_autoapply_attempts_range"),
+        CheckConstraint("max_submissions BETWEEN 0 AND 500", name="ck_autoapply_submissions_range"),
+        CheckConstraint("max_discover BETWEEN 0 AND 500", name="ck_autoapply_discover_range"),
+    )
+
+
+class SubmissionAttempt(Base):
+    """One attempt to submit one application, and the evidence for its outcome.
+
+    ``idempotency_key`` is unique across the whole table, not just within a run. That is
+    what makes an interrupted run safe to resume: the key is derived from the job and the
+    application rather than from the attempt, so a second attempt at the same application
+    reuses it, and a provider honouring the key cannot create a duplicate. The database
+    refuses a second row carrying the same key even if the orchestrator is wrong.
+
+    ``confirmation_id`` is only ever written from a provider's verification response. An
+    empty value with ``state = outcome_unknown`` is the honest record of a submission that
+    may or may not have arrived, and it is deliberately never retried.
+    """
+
+    __tablename__ = "submission_attempt"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    autoapply_run_id: Mapped[int] = mapped_column(
+        ForeignKey("autoapply_run.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[int] = mapped_column(ForeignKey("job.id", ondelete="CASCADE"), index=True)
+    application_id: Mapped[int | None] = mapped_column(
+        ForeignKey("application.id", ondelete="SET NULL"), default=None
+    )
+
+    target_key: Mapped[str] = mapped_column(String(60), default="", index=True)
+    state: Mapped[SubmissionState] = _enum_column(
+        SubmissionState, default=SubmissionState.DISCOVERED, index=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    idempotency_key: Mapped[str] = mapped_column(String(120), default="")
+
+    confirmation_id: Mapped[str] = mapped_column(String(120), default="")
+    provider_reference: Mapped[str] = mapped_column(String(120), default="")
+    submitted_url: Mapped[str] = mapped_column(Text, default="")
+    resume_sha256: Mapped[str] = mapped_column(String(64), default="")
+    response_metadata: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    detail: Mapped[str] = mapped_column(Text, default="")
+
+    #: Furthest milestone reached: see :data:`app.submission.states.CHECKPOINTS`. Separate
+    #: from ``state`` because "the form was filled" and "Submit was pressed" are different
+    #: facts that both end in, say, ``FAILED``.
+    checkpoint: Mapped[str] = mapped_column(String(40), default="")
+    #: Why it failed, as a retry-policy category (``transient``, ``form_changed``...).
+    failure_category: Mapped[str] = mapped_column(String(40), default="")
+    duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: The answers typed into the form, keyed by question. Sensitive values are masked.
+    answers_sent: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    #: Artifact ids of what was sent: resume, cover letter, answers, profile snapshot.
+    artifacts: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    #: What established the outcome: the confirmation text and URL observed.
+    confirmation_evidence: Mapped[str] = mapped_column(Text, default="")
+    #: Local path of the evidence screenshot. Served only through the authorised API.
+    evidence_path: Mapped[str] = mapped_column(String(600), default="")
+    next_retry_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+    run: Mapped[AutoApplyRun] = relationship(back_populates="attempts")
+    events: Mapped[list[SubmissionEvent]] = relationship(
+        back_populates="attempt",
+        cascade="all, delete-orphan",
+        order_by="SubmissionEvent.id",
+        lazy="selectin",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("autoapply_run_id", "job_id", name="uq_attempt_run_job"),
+        UniqueConstraint("idempotency_key", name="uq_attempt_idempotency_key"),
+        Index("ix_attempt_run_state", "autoapply_run_id", "state"),
+        CheckConstraint(
+            "confirmation_id = '' OR state = 'submitted_confirmed'",
+            name="ck_attempt_confirmation_requires_confirmed_state",
+        ),
+    )
+
+
+class SubmissionEvent(Base):
+    """One timestamped event in an attempt's life: a checkpoint, a browser event, a pause
+    for the user, a recovery. Details are redacted before they are written."""
+
+    __tablename__ = "submission_event"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("submission_attempt.id", ondelete="CASCADE"), index=True
+    )
+    #: ``checkpoint``, ``browser``, ``user_action``, ``error``, ``recovery`` or ``evidence``.
+    kind: Mapped[str] = mapped_column(String(40))
+    name: Mapped[str] = mapped_column(String(80))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, index=True)
+
+    attempt: Mapped[SubmissionAttempt] = relationship(back_populates="events")
+
+
+class JobLock(Base):
+    """Single-flight guard: at most one worker may be submitting to a given job.
+
+    The primary key is the job, so a second worker's insert fails in the database rather
+    than relying on two threads agreeing. ``expires_at`` lets a lock held by a worker that
+    died be taken over, but only after its lease has run out.
+    """
+
+    __tablename__ = "job_lock"
+
+    job_id: Mapped[int] = mapped_column(ForeignKey("job.id", ondelete="CASCADE"), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(80))
+    acquired_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+
+
+class RuntimeFlag(Base):
+    """Small durable switches: the emergency stop, per-platform circuit breakers."""
+
+    __tablename__ = "runtime_flag"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
+
+
+# --------------------------------------------------------------------------------------
+# Email response tracking (opt-in, read-only)
+# --------------------------------------------------------------------------------------
+
+
+class EmailAccount(Base):
+    """A connected mailbox. OAuth tokens are **not** stored here: they live in the OS
+    secret store (see :mod:`app.services.secrets`), keyed by this row's id."""
+
+    __tablename__ = "email_account"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), default="gmail")
+    address: Mapped[str] = mapped_column(String(320), default="")
+    scopes: Mapped[list[str]] = mapped_column(default=list)
+    status: Mapped[str] = mapped_column(String(30), default="connected")
+    connected_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    last_sync_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+
+
+class EmailMessage(Base):
+    """A job-related email, reduced to what tracking needs.
+
+    The full body is never stored. ``snippet`` is capped at 500 characters, and only
+    messages the classifier judged job-related are kept at all.
+    """
+
+    __tablename__ = "email_message"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("email_account.id", ondelete="CASCADE"), index=True, default=None
+    )
+    provider_message_id: Mapped[str] = mapped_column(String(200))
+    thread_id: Mapped[str] = mapped_column(String(200), default="")
+    received_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None, index=True)
+    sender: Mapped[str] = mapped_column(String(320), default="")
+    sender_domain: Mapped[str] = mapped_column(String(200), default="", index=True)
+    recipient: Mapped[str] = mapped_column(String(320), default="")
+    subject: Mapped[str] = mapped_column(String(400), default="")
+    snippet: Mapped[str] = mapped_column(String(500), default="")
+    category: Mapped[str] = mapped_column(String(40), default="other", index=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    extracted: Mapped[dict[str, Any]] = mapped_column(default=dict)
+
+    application_id: Mapped[int | None] = mapped_column(
+        ForeignKey("application.id", ondelete="SET NULL"), index=True, default=None
+    )
+    match_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    #: ``auto_linked``, ``needs_review``, ``unmatched``, ``user_linked`` or ``dismissed``.
+    match_state: Mapped[str] = mapped_column(String(30), default="unmatched", index=True)
+    match_candidates: Mapped[list[dict[str, Any]]] = mapped_column(default=list)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "provider_message_id", name="uq_email_account_message"),
+    )
+
+
+class StatusSuggestion(Base):
+    """A status change some evidence suggests, waiting for the user to accept or dismiss.
+
+    Nothing applies one automatically: an email that reads like a rejection is a reason to
+    ask, not proof.
+    """
+
+    __tablename__ = "status_suggestion"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("application.id", ondelete="CASCADE"), index=True
+    )
+    email_message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("email_message.id", ondelete="SET NULL"), default=None
+    )
+    attempt_id: Mapped[int | None] = mapped_column(
+        ForeignKey("submission_attempt.id", ondelete="SET NULL"), default=None
+    )
+    #: ``status`` (an ApplicationStatus value) or ``outcome`` (an Outcome value).
+    field: Mapped[str] = mapped_column(String(20), default="outcome")
+    suggested_value: Mapped[str] = mapped_column(String(40))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    #: ``pending``, ``accepted`` or ``dismissed``.
+    state: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+
+# --------------------------------------------------------------------------------------
+# Company research and interview preparation
+# --------------------------------------------------------------------------------------
+
+
+class CompanyProfile(Base):
+    """Cached company research. Every fact in ``data`` carries the source it came from."""
+
+    __tablename__ = "company_profile"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_normalized: Mapped[str] = mapped_column(String(300), unique=True)
+    display_name: Mapped[str] = mapped_column(String(300), default="")
+    website: Mapped[str] = mapped_column(String(600), default="")
+    data: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(default=list)
+    refreshed_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+
+
+class InterviewPrep(Base):
+    """Generated preparation material for one application, plus mock-interview practice."""
+
+    __tablename__ = "interview_prep"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("application.id", ondelete="CASCADE"), unique=True
+    )
+    content: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    practice: Mapped[list[dict[str, Any]]] = mapped_column(default=list)
+    generated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
+
+
+class InterviewRound(Base):
+    """What the user recorded about one interview round. Never generated."""
+
+    __tablename__ = "interview_round"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("application.id", ondelete="CASCADE"), index=True
+    )
+    round_name: Mapped[str] = mapped_column(String(120), default="")
+    scheduled_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    interviewer_notes: Mapped[str] = mapped_column(Text, default="")
+    questions_asked: Mapped[list[str]] = mapped_column(default=list)
+    feedback: Mapped[str] = mapped_column(Text, default="")
+    next_steps: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
+
+
+# --------------------------------------------------------------------------------------
+# Immutability of sent material
+# --------------------------------------------------------------------------------------
+
+
+class LockedArtifactError(PermissionError):
+    """Raised when code tries to change or delete an artifact that was sent to an employer."""
+
+
+def _refuse_locked_change(_mapper: Any, _connection: Any, target: ApplicationArtifact) -> None:
+    from sqlalchemy import inspect as sa_inspect
+
+    state = sa_inspect(target)
+    locked_before = state.attrs.locked_at.history.deleted or (
+        [target.locked_at] if not state.attrs.locked_at.history.added else []
+    )
+    if not any(value is not None for value in locked_before):
+        return  # Not locked before this flush: the lock itself may be being set now.
+    for name in ("content", "content_sha256", "kind", "label", "application_id", "byte_size"):
+        if state.attrs[name].history.has_changes():
+            raise LockedArtifactError(
+                f"artifact {target.id} was part of a submitted application and cannot be "
+                "changed; regenerate a new draft instead"
+            )
+    if state.attrs.locked_at.history.has_changes():
+        raise LockedArtifactError(f"artifact {target.id} cannot be unlocked")
+
+
+def _refuse_locked_delete(_mapper: Any, _connection: Any, target: ApplicationArtifact) -> None:
+    if target.locked_at is not None:
+        raise LockedArtifactError(
+            f"artifact {target.id} was part of a submitted application and cannot be deleted"
+        )
+
+
+from sqlalchemy import event as _sa_event  # noqa: E402 - listeners need the classes above
+
+_sa_event.listen(ApplicationArtifact, "before_update", _refuse_locked_change)
+_sa_event.listen(ApplicationArtifact, "before_delete", _refuse_locked_delete)

@@ -15,6 +15,7 @@ the rule-based letter is used instead.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -317,6 +318,9 @@ class ApplicationPreparationService:
         if existing is not None and existing.status in (
             ApplicationStatus.SUBMITTED,
             ApplicationStatus.CONFIRMED,
+            # Might already be with the employer: its answers are the record of what was
+            # sent and must not be replaced by a fresh draft.
+            ApplicationStatus.SUBMISSION_UNKNOWN,
         ):
             raise DuplicateApplicationError(existing.id, job.id)
 
@@ -454,6 +458,17 @@ class ApplicationPreparationService:
                     application.cover_letter,
                 )
             )
+        profile = self._session.get(CandidateProfile, application.profile_id)
+        if profile is not None:
+            # The profile version this draft was prepared from, so a later profile edit
+            # cannot silently change what the application says it was based on.
+            candidates.append(
+                (
+                    "profile_snapshot",
+                    f"prepared {utcnow().date().isoformat()}",
+                    json.dumps(profile_facts(profile), sort_keys=True),
+                )
+            )
 
         stored: list[ApplicationArtifact] = []
         for kind, label, content in candidates:
@@ -496,3 +511,24 @@ class ApplicationPreparationService:
             updated.append(answer)
         self._session.flush()
         return updated
+
+
+def profile_facts(profile: CandidateProfile) -> dict[str, object]:
+    """The profile facts an application relies on, as a versionable snapshot."""
+    return {
+        "full_name": profile.full_name,
+        "email": profile.email,
+        "phone": profile.phone,
+        "links": list(profile.links or []),
+        "headline": profile.headline,
+        "years_experience": profile.years_experience,
+        "technical_skills": list(profile.technical_skills or []),
+        "preferred_locations": list(profile.preferred_locations or []),
+        "notice_period_days": profile.notice_period_days,
+        "salary_expectation_min": profile.salary_expectation_min,
+        "salary_expectation_max": profile.salary_expectation_max,
+        "salary_currency": profile.salary_currency,
+        "work_authorization": profile.work_authorization,
+        "requires_sponsorship": profile.requires_sponsorship,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+    }

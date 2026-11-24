@@ -86,8 +86,15 @@ class BatchSelection:
     min_score: float | None = None
     bands: list[str] = field(default_factory=list)
     max_age_days: int | None = None
+    #: Hour-granular freshness, for runs that want "posted in the last 24/48/72 hours".
+    #: Applied in addition to ``max_age_days``; the tighter of the two wins.
+    max_age_hours: int | None = None
+    #: Lowest acceptable evidence confidence. Ordered low < medium < high, so "medium"
+    #: admits medium and high. A sparse listing can score well and still be excluded here.
+    min_confidence: str = ""
     titles: list[str] = field(default_factory=list)
     sources: list[SourceName] = field(default_factory=list)
+    excluded_companies: list[str] = field(default_factory=list)
     include_filtered: bool = False
     include_unscored: bool = False
     limit: int = 100
@@ -97,12 +104,28 @@ class BatchSelection:
             "min_score": self.min_score,
             "bands": list(self.bands),
             "max_age_days": self.max_age_days,
+            "max_age_hours": self.max_age_hours,
+            "min_confidence": self.min_confidence,
             "titles": list(self.titles),
             "sources": [source.value for source in self.sources],
+            "excluded_companies": list(self.excluded_companies),
             "include_filtered": self.include_filtered,
             "include_unscored": self.include_unscored,
             "limit": self.limit,
         }
+
+
+#: Confidence labels in increasing order of evidence strength, used to turn a floor like
+#: "medium" into the set {medium, high}.
+_CONFIDENCE_ORDER: tuple[str, ...] = ("low", "medium", "high")
+
+
+def confidence_at_least(floor: str) -> list[str]:
+    """Labels that satisfy a confidence floor. An unknown floor admits everything."""
+    normalized = (floor or "").strip().lower()
+    if normalized not in _CONFIDENCE_ORDER:
+        return list(_CONFIDENCE_ORDER)
+    return list(_CONFIDENCE_ORDER[_CONFIDENCE_ORDER.index(normalized) :])
 
 
 @dataclass(slots=True)
@@ -154,6 +177,17 @@ def select_job_ids(
     if selection.max_age_days is not None:
         cutoff = utcnow() - timedelta(days=selection.max_age_days)
         statement = statement.where(Job.posted_at.is_(None) | (Job.posted_at >= cutoff))
+    if selection.max_age_hours is not None:
+        cutoff = utcnow() - timedelta(hours=selection.max_age_hours)
+        statement = statement.where(Job.posted_at.is_(None) | (Job.posted_at >= cutoff))
+    if selection.min_confidence:
+        statement = statement.where(
+            JobMatch.confidence.in_(confidence_at_least(selection.min_confidence))
+        )
+    if selection.excluded_companies:
+        for company in selection.excluded_companies:
+            if company.strip():
+                statement = statement.where(~Job.company.ilike(f"%{company.strip()}%"))
     if selection.sources:
         statement = statement.where(
             Job.id.in_(

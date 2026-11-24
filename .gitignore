@@ -45,3 +45,13 @@ htmlcov/
 *resume*.pdf
 *resume*.docx
 !tests/fixtures/*.pdf
+
+# Evidence, browser state and tokens. All live under var/ already; these catch copies made
+# elsewhere by hand.
+screenshots/
+secrets/
+*.har
+trace*.zip
+# A packed browser extension and its signing key.
+*.crx
+extension/*.zip

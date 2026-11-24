@@ -1,9 +1,16 @@
 """Compliance, security and reliability guarantees.
 
 These tests exist to make the project's central promises mechanically checkable rather
-than merely documented: no automated submission anywhere, no adapter that fakes discovery,
-no unsafe URL reaching the user, no job description treated as an instruction, and no
-unbounded retry loop.
+than merely documented: no adapter that fakes discovery, no unsafe URL reaching the user,
+no job description treated as an instruction, and no unbounded retry loop.
+
+On submission the promise is precise rather than absolute, because the auto-apply engine
+really does dispatch applications. **No real job platform can be submitted to**: every
+platform adapter reports submission as unsupported with its policy or credential reason,
+the source-level capability flag is refused in three independent layers, and the
+application tracker will not record an automated submission unless the provider's own
+adapter authorises it and returns a confirmation. The only provider that qualifies is a
+loopback test server this project runs itself.
 """
 
 from __future__ import annotations
@@ -51,6 +58,15 @@ def test_the_database_rejects_an_enabled_submission_flag(session: Session) -> No
 
 
 def test_no_route_in_the_api_submits_an_application(client: TestClient) -> None:
+    """No route is *named* for submitting an application.
+
+    Weaker than it looks, and deliberately kept alongside the two tests below. Since the
+    auto-apply engine exists, a run genuinely can dispatch an application — but only to a
+    provider whose adapter reports submission as authorized, which no real job platform
+    does. This test guards the naming; the real guarantee is
+    :func:`test_no_real_platform_can_be_submitted_to` and
+    :func:`test_the_tracker_refuses_an_automated_submission_without_provider_evidence`.
+    """
     paths = [route.path.lower() for route in client.app.routes if hasattr(route, "methods")]
     assert not [path for path in paths if "submit" in path or "/apply" in path]
 
@@ -59,6 +75,65 @@ def test_no_route_in_the_api_submits_an_application(client: TestClient) -> None:
         for method, operation in operations.items():
             identifier = f"{method} {path} {operation.get('operationId', '')}".lower()
             assert "submit" not in identifier or "applications" not in identifier
+
+
+def test_no_real_platform_can_be_submitted_to() -> None:
+    """The guarantee that matters: no adapter for a real platform permits submission.
+
+    Derived from each adapter's own capability report, so the promise cannot be kept in
+    documentation while the code does something else.
+    """
+    from app.db.models import Job
+    from app.submission import all_submission_adapters, supported_targets
+
+    real_platforms = {
+        "linkedin",
+        "indeed",
+        "naukri",
+        "wellfound",
+        "greenhouse",
+        "lever",
+        "ashby",
+        "smartrecruiters",
+        "workable",
+        "unknown",
+    }
+    probe = Job(title="", company="", url="")
+    for adapter in all_submission_adapters():
+        if adapter.target.key not in real_platforms:
+            continue
+        report = adapter.check_capability(probe)
+        assert report.supported is False, adapter.target.key
+        assert len(report.reason) > 60, f"{adapter.target.key} must state why"
+
+    assert not (supported_targets() & real_platforms)
+
+
+def test_the_tracker_refuses_an_automated_submission_without_provider_evidence() -> None:
+    """An automated actor cannot record a submission by naming a provider it chose.
+
+    The permission is read from the adapter, so passing a real platform's key, or a
+    confirmation identifier with no provider, or a provider with no identifier, all fail.
+    """
+    from app.db.models import ApplicationStatus
+    from app.services.tracking import TransitionRequest, _automated_submission_permitted
+
+    cases = [
+        TransitionRequest(ApplicationStatus.SUBMITTED),
+        TransitionRequest(ApplicationStatus.SUBMITTED, submission_target="linkedin"),
+        TransitionRequest(
+            ApplicationStatus.SUBMITTED, submission_target="linkedin", confirmation_id="CONF-1"
+        ),
+        TransitionRequest(
+            ApplicationStatus.SUBMITTED, submission_target="greenhouse", confirmation_id="CONF-1"
+        ),
+        TransitionRequest(ApplicationStatus.SUBMITTED, confirmation_id="CONF-1"),
+        TransitionRequest(
+            ApplicationStatus.SUBMITTED, submission_target="local_test", confirmation_id="  "
+        ),
+    ]
+    for request in cases:
+        assert _automated_submission_permitted(request) is False, request
 
 
 def test_health_states_that_automated_submission_is_unsupported(client: TestClient) -> None:

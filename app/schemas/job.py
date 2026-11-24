@@ -155,6 +155,41 @@ class JobDetail(JobRead):
     description: str = ""
 
 
+class ExplanationFinding(BaseModel):
+    statement: str
+    source: str
+    quote: str = ""
+
+
+class ExplanationSection(BaseModel):
+    key: str
+    title: str
+    findings: list[ExplanationFinding] = Field(default_factory=list)
+    empty_note: str = ""
+
+
+class SkillFindingRead(BaseModel):
+    skill: str
+    status: str
+    evidence_class: str = ""
+    note: str = ""
+    quote: str = ""
+    related_to: str = ""
+
+
+class JobExplanationRead(BaseModel):
+    """A scored job re-expressed as grounded findings a person can check.
+
+    Derived on request from the stored job, profile and match rather than persisted: the
+    score is the durable record, and recomputing the narrative means it can never describe
+    a different profile from the one in force now.
+    """
+
+    job_id: int
+    sections: list[ExplanationSection] = Field(default_factory=list)
+    skills: list[SkillFindingRead] = Field(default_factory=list)
+
+
 class ImportSummary(BaseModel):
     """Outcome of one import or discovery run."""
 

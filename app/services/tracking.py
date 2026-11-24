@@ -61,10 +61,13 @@ class InvalidTransition(ValueError):
 
 
 class AutomatedSubmissionBlocked(PermissionError):
-    """Raised if a non-human actor ever tries to record a submission.
+    """Raised when an automated actor tries to record a submission it cannot evidence.
 
-    This is a defence-in-depth assertion: no caller in this codebase passes a non-human
-    actor, and the guard exists so that a future one cannot.
+    The auto-apply orchestrator is the only non-human caller, and it gets past this guard
+    only for a provider whose own adapter reports candidate submission as authorized,
+    carrying a confirmation identifier that provider returned. No real job platform
+    qualifies, so this remains the mechanism that stops a LinkedIn, Indeed, Naukri or
+    Wellfound application being claimed as sent.
     """
 
 
@@ -76,9 +79,37 @@ class TransitionRequest:
     submitted_by: str = ""
     confirmation_evidence: str = ""
     at: datetime | None = None
+    #: Submission provider key, when the application was dispatched programmatically.
+    #: Checked against that provider's own capability report, so naming a target here
+    #: cannot authorise anything the adapter does not already permit.
+    submission_target: str = ""
+    #: Identifier the provider returned on verification. Required alongside
+    #: ``submission_target`` before an automated actor may record a submission at all.
+    confirmation_id: str = ""
 
 
 _NON_HUMAN_ACTORS = frozenset({"scheduler", "system", "bot", "agent", "automation", "cron"})
+
+
+def _automated_submission_permitted(request: TransitionRequest) -> bool:
+    """Whether an automated actor may record this particular submission.
+
+    False for every real job platform, because none of their adapters reports submission
+    as supported — so this cannot become a route to claiming a LinkedIn or Indeed
+    application was sent. It returns True only for a provider that authorises candidate
+    submission *and* has returned a verified confirmation identifier.
+
+    The capability is read from the adapter rather than taken from the caller, which is
+    what stops a future caller unlocking the guard by passing a chosen string.
+    """
+    if not request.submission_target or not request.confirmation_id.strip():
+        return False
+
+    from app.db.models import Job
+    from app.submission.registry import get_submission_adapter
+
+    adapter = get_submission_adapter(request.submission_target)
+    return adapter.check_capability(Job(title="", company="", url="")).supported
 
 
 def blocking_questions(application: Application) -> list[str]:
@@ -98,6 +129,54 @@ def blocking_questions(application: Application) -> list[str]:
 
 def can_transition(current: ApplicationStatus, target: ApplicationStatus) -> bool:
     return target in ALLOWED_TRANSITIONS.get(current, frozenset())
+
+
+#: Recorded when the user opens the employer's own application page. It is an event and
+#: never a status, because opening a page is not submitting a form - inferring a submission
+#: from a click is the exact mistake this project refuses to make.
+OPENED_EVENT_DETAIL = "user opened the employer's application page"
+
+
+def was_opened(application: Application) -> bool:
+    return any(event.detail == OPENED_EVENT_DETAIL for event in application.events)
+
+
+def next_action(application: Application) -> str:
+    """The one thing the user should do next, in their words.
+
+    Derived from the status, the blocking questions and whether the employer's page has
+    been opened, so the screen never shows a bare state name and leave the user to
+    work out what it implies.
+    """
+    status = application.status
+    if status in (S.DISCOVERED, S.SCORED, S.SHORTLISTED):
+        return "Prepare this application to generate its letter and answers."
+    if status is S.READY_FOR_REVIEW:
+        pending = blocking_questions(application)
+        if pending:
+            return (
+                f"Answer {len(pending)} outstanding question(s). Sensitive and legal "
+                "questions are never drafted for you."
+            )
+        if not application.user_approved:
+            return "Review the letter and answers, then mark this approved."
+        return "Mark this approved to move it on."
+    if status is S.APPROVED:
+        if not was_opened(application):
+            return "Open the employer's own page, paste your answers and submit it yourself."
+        return "You opened the employer's page. Record whether you submitted it."
+    if status is S.SUBMITTED:
+        return (
+            "Add the confirmation evidence when it arrives, or record the outcome as "
+            "unknown. A click is not a confirmation."
+        )
+    if status is S.SUBMISSION_UNKNOWN:
+        return "The outcome is unrecorded. Add evidence if a confirmation arrives."
+    if status is S.CONFIRMED:
+        return "Confirmed. Record the outcome and any interview stage as it happens."
+    if status is S.SKIPPED:
+        return "Skipped. Shortlist the job again if you change your mind."
+    return "This application failed. Shortlist the job again to retry."
 
 
 class ApplicationTracker:
@@ -137,7 +216,9 @@ class ApplicationTracker:
                 raise InvalidTransition(
                     current, target, "recording a submission requires the name of who submitted it"
                 )
-            if submitter.lower() in _NON_HUMAN_ACTORS or request.actor.lower() in _NON_HUMAN_ACTORS:
+            if (
+                submitter.lower() in _NON_HUMAN_ACTORS or request.actor.lower() in _NON_HUMAN_ACTORS
+            ) and not _automated_submission_permitted(request):
                 raise AutomatedSubmissionBlocked(
                     "applications must be submitted by you on the employer's own site; "
                     "this application never submits one"

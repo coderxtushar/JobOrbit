@@ -37,6 +37,14 @@ def _isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Itera
     monkeypatch.setenv("JA_EMAIL_INGEST_ENABLED", "false")
     monkeypatch.setenv("JA_API_HOST", "127.0.0.1")
     monkeypatch.setenv("JA_API_TOKEN", "")
+    # The developer's own .env may switch live submission on; a test never inherits it.
+    monkeypatch.setenv("JA_BROWSER_SUBMISSION_ENABLED", "false")
+    monkeypatch.setenv("JA_EMAIL_TRACKING_ENABLED", "false")
+    monkeypatch.setenv("JA_COMPANY_RESEARCH_EXTERNAL", "false")
+    monkeypatch.setenv("JA_SECRET_BACKEND", "file")
+    monkeypatch.setenv("JA_RETRY_BACKOFF_S", "0")
+    for board in ("GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS", "WORKABLE"):
+        monkeypatch.setenv(f"JA_{board}_BOARDS", "")
     reset_settings_cache()
     from app.config import get_settings
 

@@ -278,3 +278,52 @@ class JobRepository:
             .group_by(Job.status)
         ).all()
         return {status.value: count for status, count in rows}
+
+    def discovered_by_day(self, since: datetime) -> dict[str, int]:
+        """How many jobs were first seen on each day since ``since``.
+
+        Grouped on ``discovered_at``, never ``posted_at``: this answers "what did the app
+        find", which is a different question from when employers published.
+        """
+        rows = self._session.execute(
+            select(func.date(Job.discovered_at), func.count(Job.id))
+            .where(Job.discovered_at >= since, Job.duplicate_of_id.is_(None))
+            .group_by(func.date(Job.discovered_at))
+        ).all()
+        return {str(day): count for day, count in rows if day is not None}
+
+    def freshness_counts(self, stale_before: datetime) -> dict[str, int]:
+        """Split jobs into dated-and-current, dated-and-stale, and undated.
+
+        Undated listings are their own bucket rather than being assumed current or stale,
+        because the source simply did not say.
+        """
+        undated = int(
+            self._session.scalar(
+                select(func.count(Job.id)).where(
+                    Job.posted_at.is_(None), Job.duplicate_of_id.is_(None)
+                )
+            )
+            or 0
+        )
+        stale = int(
+            self._session.scalar(
+                select(func.count(Job.id)).where(
+                    Job.posted_at.is_not(None),
+                    Job.posted_at < stale_before,
+                    Job.duplicate_of_id.is_(None),
+                )
+            )
+            or 0
+        )
+        current = int(
+            self._session.scalar(
+                select(func.count(Job.id)).where(
+                    Job.posted_at.is_not(None),
+                    Job.posted_at >= stale_before,
+                    Job.duplicate_of_id.is_(None),
+                )
+            )
+            or 0
+        )
+        return {"current": current, "stale": stale, "undated": undated}

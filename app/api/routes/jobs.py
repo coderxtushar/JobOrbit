@@ -27,6 +27,7 @@ from app.schemas.job import (
     DiscoverRequest,
     ImportSummary,
     JobDetail,
+    JobExplanationRead,
     JobImportRequest,
     JobRead,
     MatchRead,
@@ -34,6 +35,7 @@ from app.schemas.job import (
     ScoreSummary,
     SourceReferenceRead,
 )
+from app.services.explanation import StoredMatch, build_explanation
 from app.services.ingest import JobIngestService
 from app.services.scoring import ScoringService
 from app.services.storage import store_import_payload
@@ -321,6 +323,26 @@ def read_job(job_id: int, session: DbSession, profile: Profile) -> JobDetail:
     result = to_job_read(job, session, profile.id, detail=True)
     assert isinstance(result, JobDetail)
     return result
+
+
+@router.get(
+    "/{job_id}/explanation",
+    response_model=JobExplanationRead,
+    summary="Explain one job's score in grounded sections",
+)
+def explain_job(job_id: int, session: DbSession, profile: Profile) -> JobExplanationRead:
+    job = JobRepository(session).get(job_id)
+    if job is None:
+        raise ApiError("not_found", f"job {job_id} was not found", status.HTTP_404_NOT_FOUND)
+    row = MatchRepository(session).get_for_job(job.id, profile.id)
+    if row is None:
+        raise ApiError(
+            "not_scored",
+            f"job {job_id} has not been scored yet, so there is nothing to explain",
+            status.HTTP_409_CONFLICT,
+        )
+    explanation = build_explanation(job, profile, StoredMatch.from_row(row))
+    return JobExplanationRead.model_validate(explanation.as_dict())
 
 
 @router.post("/{job_id}/shortlist", response_model=ActionResult, summary="Shortlist a job")

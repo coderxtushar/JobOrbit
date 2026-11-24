@@ -131,6 +131,34 @@ DEMO_BLOCKED_REASONS: dict[str, str] = {
         "Source capabilities are a compliance setting, not a preference, so they cannot be "
         "changed from a shared demo."
     ),
+    "autoapply_run": (
+        "An auto-apply run calls other companies' job-board APIs and prepares a hundred "
+        "or more applications, so it is disabled on a shared container. Preview still "
+        "works and shows exactly what a run would do."
+    ),
+    "autoapply_resume": (
+        "Resuming an auto-apply run would restart the same work, so it is disabled here "
+        "for the same reason as starting one."
+    ),
+    "email_tracking": (
+        "Email tracking reads a personal mailbox. A shared public demo has no per-user "
+        "login, so connecting one here would expose it to every visitor; it is disabled. "
+        "Run JobOrbit locally to connect your own Gmail read-only."
+    ),
+    "job_capture": (
+        "Capturing a job writes a listing from your browser into the database every later "
+        "visitor reads, so it is disabled on the shared demo. Run JobOrbit locally and the "
+        "extension sends listings to your own copy."
+    ),
+    "external_research": (
+        "Fetching a company's website spends this container's network on every visitor's "
+        "request, so it is disabled here. Research built from the listings already held "
+        "still works."
+    ),
+    "autoapply_control": (
+        "The emergency stop and evidence cleanup act on every run in the installation, not "
+        "one visitor's copy, so they cannot be used from a shared demo."
+    ),
     "resume_upload": (
         "This is a shared public demo, so resume upload is disabled. A deployment like "
         "this has no per-user login, which means one visitor's resume would be readable by "
@@ -148,9 +176,11 @@ DEMO_SESSION_SCOPED: frozenset[str] = frozenset(
         "score_jobs",
         "prepare_application",
         "update_application",
+        "record_opened",
         "save_answer",
         "delete_answer",
         "update_profile",
+        "complete_onboarding",
         "create_variant",
         "set_primary",
         "create_search",
@@ -158,6 +188,22 @@ DEMO_SESSION_SCOPED: frozenset[str] = frozenset(
         "delete_search",
         "run_search",
         "preview_batch",
+        "preview_run",
+        "preflight_run",
+        "save_preferences",
+        "regenerate_application",
+        # Company research and interview preparation write only the visitor's own copy.
+        # The two GETs are listed because they fill the research cache.
+        "read_company_research",
+        "read_job_company_research",
+        "refresh_company_research",
+        "generate_interview_prep",
+        "record_practice_answer",
+        "create_interview_round",
+        "update_interview_round",
+        "delete_interview_round",
+        "pause_run",
+        "cancel_run",
         "cancel_batch",
         "resume_batch",
     }

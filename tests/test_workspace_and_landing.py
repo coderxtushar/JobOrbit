@@ -364,8 +364,14 @@ def test_every_blocked_operation_explains_itself_and_offers_a_way_forward() -> N
         "discovery",
         "job_import",
         "batch_run",
+        "autoapply_run",
+        "autoapply_resume",
         "source_config",
         "resume_upload",
+        "email_tracking",
+        "job_capture",
+        "external_research",
+        "autoapply_control",
     }
     for operation, reason in DEMO_BLOCKED_REASONS.items():
         assert "disabled" in reason or "cannot" in reason or "too" in reason, operation
@@ -430,8 +436,27 @@ def test_mutating_endpoints_are_either_blocked_or_session_scoped() -> None:
         "import_jobs",
         "import_jobs_csv",
         "start_batch",
+        "start_run",
+        "resume_run",
         "update_source",
         "upload_resume",
+        "capture_job",
+        # Email tracking reads a personal mailbox: never on a shared demo.
+        "sync_email",
+        "ingest_email",
+        "accept_status_suggestion",
+        "dismiss_status_suggestion",
+        "link_email_message",
+        "dismiss_email_message",
+        "disconnect_email",
+        "delete_email_data",
+        # Safety controls act on every run in the installation.
+        "emergency_stop",
+        "clear_emergency_stop",
+        "reset_circuit",
+        "cleanup_evidence",
+        "recheck_attempt",
+        "resolve_attempt",
     }
     app = create_app()
     mutating = {
@@ -451,7 +476,9 @@ def test_mutating_endpoints_are_either_blocked_or_session_scoped() -> None:
     guarded_sources = "".join(
         path.read_text(encoding="utf-8") for path in sorted(routes_dir.glob("*.py"))
     )
-    assert guarded_sources.count("refuse_in_demo_mode(settings,") == 6
+    # 8 original guards plus the 7 auto-apply safety controls. A new guard must be added
+    # here deliberately.
+    assert guarded_sources.count("refuse_in_demo_mode(settings,") == 15
 
 
 # --------------------------------------------------------------------------------------

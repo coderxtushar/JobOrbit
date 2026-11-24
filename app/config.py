@@ -90,6 +90,71 @@ class Settings(BaseSettings):
     jobicy_enabled: bool = False
     feed_max_pages: int = Field(default=3, ge=1, le=50)
 
+    # ---------- Browser submission (Greenhouse / Lever / Ashby forms) ----------
+    # Off by default. When on, auto-apply runs open each employer's own application form
+    # in a dedicated Chrome profile, fill it from verified answers and press Submit. A
+    # visible CAPTCHA, a sign-in wall or any unanswered question stops that job and hands
+    # it to you; nothing is ever guessed and no challenge is ever solved by the program.
+    browser_submission_enabled: bool = False
+    browser_profile_dir: Path = Path("./var/browser/chrome")
+    #: Playwright browser channel. "chrome" drives the installed Google Chrome; empty
+    #: means Playwright's bundled Chromium (needs `playwright install chromium`).
+    browser_channel: str = "chrome"
+    browser_headless: bool = False
+    browser_action_delay_min_ms: int = Field(default=350, ge=0, le=10000)
+    browser_action_delay_max_ms: int = Field(default=1100, ge=0, le=20000)
+    #: Pause between two submitted applications, so a run proceeds at a human pace.
+    browser_between_applications_min_s: int = Field(default=20, ge=0, le=3600)
+    browser_between_applications_max_s: int = Field(default=60, ge=0, le=3600)
+    browser_confirmation_timeout_s: int = Field(default=25, ge=3, le=300)
+    browser_page_timeout_s: int = Field(default=45, ge=5, le=300)
+    #: Hard ceiling on applications dispatched through the browser per calendar day.
+    browser_daily_submission_cap: int = Field(default=25, ge=1, le=500)
+    #: Browser submissions allowed to run at the same time on one platform, across runs.
+    browser_max_concurrent_per_platform: int = Field(default=1, ge=1, le=4)
+    #: Consecutive failures on one platform that open its circuit breaker for the run.
+    circuit_breaker_threshold: int = Field(default=3, ge=1, le=20)
+    #: How long a job lock lasts before a crashed worker's lock may be taken over.
+    job_lock_ttl_s: int = Field(default=900, ge=60, le=86400)
+    #: A RUNNING run with no heartbeat for this long is treated as interrupted.
+    run_stale_after_s: int = Field(default=180, ge=30, le=86400)
+    #: Base delay before retrying a transient failure; doubled per attempt.
+    retry_backoff_s: int = Field(default=30, ge=0, le=3600)
+
+    # ---------- Evidence ----------
+    #: Screenshots and browser events older than this are deleted by the cleanup task.
+    evidence_retention_days: int = Field(default=30, ge=1, le=3650)
+    #: Take a screenshot of the confirmation (or failure) page for every browser attempt.
+    evidence_screenshots: bool = True
+
+    # ---------- Email response tracking (opt-in, read-only Gmail OAuth) ----------
+    email_tracking_enabled: bool = False
+    #: OAuth client of type "Desktop app" created by the user in their own Google Cloud
+    #: project. The installed-app client secret is not confidential by Google's design.
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    email_sync_days: int = Field(default=30, ge=1, le=365)
+    email_max_messages: int = Field(default=200, ge=1, le=2000)
+    #: Where OAuth tokens are kept: ``auto`` uses the OS keychain when available.
+    secret_backend: Literal["auto", "keychain", "file"] = "auto"
+
+    # ---------- Compensation ----------
+    #: Optional INR per USD rate for showing USD salaries in INR. Never guessed.
+    usd_inr_rate: float | None = Field(default=None, gt=0)
+
+    @field_validator("usd_inr_rate", mode="before")
+    @classmethod
+    def _blank_rate_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    # ---------- Company research ----------
+    #: Allow fetching a company's own website (title and meta description) on request.
+    company_research_external: bool = False
+
+    # ---------- Analytics ----------
+    #: Minutes a person typically spends on one application form, for "time saved".
+    minutes_per_manual_application: int = Field(default=12, ge=1, le=240)
+
     # ---------- Bulk preparation ----------
     batch_concurrency: int = Field(default=4, ge=1, le=16)
     batch_max_attempts: int = Field(default=3, ge=1, le=10)
@@ -168,6 +233,16 @@ class Settings(BaseSettings):
         return self.data_dir / "artifacts"
 
     @property
+    def evidence_dir(self) -> Path:
+        """Submission screenshots. May show personal data, so owner-only and never served."""
+        return self.data_dir / "screenshots"
+
+    @property
+    def secrets_dir(self) -> Path:
+        """Fallback token store when no OS keychain is available. Owner-only."""
+        return self.data_dir / "secrets"
+
+    @property
     def import_dir(self) -> Path:
         """Copies of uploaded import payloads, kept for audit."""
         return self.data_dir / "imports"
@@ -178,7 +253,13 @@ class Settings(BaseSettings):
 
     def ensure_directories(self) -> None:
         """Create the private data directories with owner-only permissions."""
-        for directory in (self.data_dir, self.resume_dir, self.artifact_dir, self.import_dir):
+        for directory in (
+            self.data_dir,
+            self.resume_dir,
+            self.artifact_dir,
+            self.import_dir,
+            self.evidence_dir,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
             try:
                 directory.chmod(0o700)

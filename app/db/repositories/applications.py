@@ -133,6 +133,19 @@ class ApplicationRepository:
         ).all()
         return {source.value: count for source, count in rows}
 
+    def oldest_waiting(self) -> Application | None:
+        """The application that has sat in the review queue longest."""
+        return self._session.scalars(
+            select(Application)
+            .where(
+                Application.status.in_(
+                    [ApplicationStatus.READY_FOR_REVIEW, ApplicationStatus.APPROVED]
+                )
+            )
+            .order_by(Application.prepared_at.asc(), Application.created_at.asc())
+            .limit(1)
+        ).first()
+
     def status_counts_for_sources(self, sources: SourceNameList) -> dict[str, int]:
         if not sources:
             return {}

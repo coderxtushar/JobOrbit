@@ -161,6 +161,14 @@ class DescriptionEvidence:
     word_count: int = 0
     stated_min_years: float | None = None
     mentions_fresher_opening: bool = False
+    #: Canonical skill -> the exact line of the description it was found on, clipped. The
+    #: explanation screen quotes these so a user can check a claim against the listing's
+    #: own words instead of trusting the score.
+    spans: dict[str, str] = field(default_factory=dict)
+    #: The exact text the experience bar was read from, e.g. "at least 5 years of
+    #: experience". Reported alongside ``stated_min_years`` because a parsed number with no
+    #: quote is unauditable.
+    years_phrase: str | None = None
 
     @property
     def is_sparse(self) -> bool:
@@ -190,14 +198,14 @@ def _skills_in(text: str) -> list[str]:
     return [skill for skill in KNOWN_SKILL_VOCABULARY if f" {skill} " in haystack]
 
 
-def _stated_min_years(description: str) -> float | None:
-    """The smallest experience bar the prose states, or ``None`` if it states none.
+def _stated_min_years(description: str) -> tuple[float | None, str | None]:
+    """The smallest experience bar the prose states, with the text it was read from.
 
     The *smallest* figure is taken deliberately: a listing saying "3+ years required, 5+
     years preferred" has a bar of three, and reading the larger number would reject a
     candidate the employer would consider.
     """
-    found: list[float] = []
+    found: list[tuple[float, str]] = []
     for match in _YEARS.finditer(description):
         low = match.group(1)
         if low is None:
@@ -207,8 +215,21 @@ def _stated_min_years(description: str) -> float | None:
         except ValueError:
             continue
         if 0 <= value <= 40:
-            found.append(value)
-    return min(found) if found else None
+            found.append((value, match.group(0).strip()))
+    if not found:
+        return None, None
+    smallest = min(found, key=lambda item: item[0])
+    return smallest[0], smallest[1]
+
+
+SPAN_LIMIT = 220
+
+
+def _span(line: str) -> str:
+    cleaned = " ".join(line.split()).lstrip("•-*· \t")
+    if len(cleaned) <= SPAN_LIMIT:
+        return cleaned
+    return cleaned[: SPAN_LIMIT - 1].rstrip() + "…"
 
 
 def analyse_description(description: str) -> DescriptionEvidence:
@@ -220,13 +241,14 @@ def analyse_description(description: str) -> DescriptionEvidence:
     evidence.word_count = len(description.split())
     lowered = description.lower()
     evidence.mentions_fresher_opening = any(cue in lowered for cue in _FRESHER_CUES)
-    evidence.stated_min_years = _stated_min_years(description)
+    evidence.stated_min_years, evidence.years_phrase = _stated_min_years(description)
 
     buckets: dict[EvidenceClass, dict[str, None]] = {
         EvidenceClass.REQUIRED: {},
         EvidenceClass.PREFERRED: {},
         EvidenceClass.INCIDENTAL: {},
     }
+    raw_spans: dict[str, str] = {}
     current = EvidenceClass.INCIDENTAL
     for raw_line in description.splitlines():
         line = raw_line.strip()
@@ -237,6 +259,7 @@ def analyse_description(description: str) -> DescriptionEvidence:
             evidence.has_requirements_section = True
         for skill in _skills_in(line):
             buckets[current].setdefault(skill, None)
+            raw_spans.setdefault(skill, _span(line))
 
     required = list(buckets[EvidenceClass.REQUIRED])
     preferred = [skill for skill in buckets[EvidenceClass.PREFERRED] if skill not in required]
@@ -246,6 +269,9 @@ def analyse_description(description: str) -> DescriptionEvidence:
     evidence.required = [canonical_skill(skill) or skill for skill in required]
     evidence.preferred = [canonical_skill(skill) or skill for skill in preferred]
     evidence.incidental = [canonical_skill(skill) or skill for skill in incidental]
+    evidence.spans = {
+        canonical_skill(skill) or skill: span for skill, span in raw_spans.items() if span
+    }
     return evidence
 
 

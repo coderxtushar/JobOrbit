@@ -160,3 +160,56 @@ class DuplicationReportRead(BaseModel):
     normalization_collisions: list[NormalizationCollisionRead]
     buckets_skipped: list[str]
     is_healthy: bool
+
+
+class DiscoveryAnalyticsRead(BaseModel):
+    jobs_total: int
+    jobs_scored: int
+    jobs_unscored: int
+    jobs_by_source: dict[str, int] = Field(default_factory=dict)
+    new_by_day: dict[str, int] = Field(default_factory=dict)
+    window_days: int
+    import_runs_failed: int
+
+
+class QualityAnalyticsRead(BaseModel):
+    band_counts: dict[str, int] = Field(default_factory=dict)
+    confidence_counts: dict[str, int] = Field(default_factory=dict)
+    filtered_out: int
+    duplicate_rate: float
+    cross_source_rate: float
+    false_merge_suspects: int
+    freshness: dict[str, int] = Field(default_factory=dict)
+    stale_rate: float
+    undated_rate: float
+    max_job_age_days: int
+    labelled_precision: float | None = None
+    labelled_precision_note: str = ""
+
+
+class OutcomeAnalyticsRead(BaseModel):
+    applications_by_status: dict[str, int] = Field(default_factory=dict)
+    applications_by_outcome: dict[str, int] = Field(default_factory=dict)
+    applications_by_source: dict[str, int] = Field(default_factory=dict)
+    prepared: int
+    marked_submitted: int
+    confirmed: int
+    interviews: int
+    offers: int
+    review_queue_size: int
+    oldest_waiting_days: float | None = None
+    oldest_waiting_id: int | None = None
+
+
+class JobSearchAnalyticsRead(BaseModel):
+    """Discovery, quality and outcome metrics, kept in separate groups.
+
+    The three are never summed or blended: discovery counts what the app found, quality
+    says how much of it can be trusted, and outcomes record only what the user and
+    employers actually did.
+    """
+
+    discovery: DiscoveryAnalyticsRead
+    quality: QualityAnalyticsRead
+    outcomes: OutcomeAnalyticsRead
+    demo_mode: bool = False

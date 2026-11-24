@@ -22,12 +22,14 @@ from app.schemas.source import (
     DuplicationReportRead,
     EstimatedMetrics,
     FalseMergeSuspectRead,
+    JobSearchAnalyticsRead,
     MissedMergeSuspectRead,
     NormalizationCollisionRead,
     OperationalMetrics,
     SourceRead,
     SourceUpdate,
 )
+from app.services.analytics import build_analytics
 from app.services.duplication import analyse_duplication
 from app.services.metrics import estimated_metrics, operational_metrics
 from app.sources import (
@@ -199,6 +201,20 @@ def estimated(session: DbSession, profile: Profile) -> EstimatedMetrics:
 
 
 @router.get(
+    "/metrics/analytics",
+    response_model=JobSearchAnalyticsRead,
+    summary="Job-search analytics grouped into discovery, quality and outcomes",
+)
+def analytics(
+    session: DbSession, profile: Profile, settings: AppSettings
+) -> JobSearchAnalyticsRead:
+    report = build_analytics(session, profile)
+    return JobSearchAnalyticsRead.model_validate(
+        {**report.as_dict(), "demo_mode": settings.demo_mode}
+    )
+
+
+@router.get(
     "/metrics/duplication",
     response_model=DuplicationReportRead,
     summary="Cross-source duplication rates and merge suspects",
@@ -312,3 +328,13 @@ def audit_logs(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/metrics/outcomes",
+    summary="Application outcome analytics from recorded data only",
+)
+def outcome_analytics(session: DbSession, profile: Profile) -> dict:
+    from app.services.outcome_analytics import build_outcome_report
+
+    return build_outcome_report(session, profile).as_dict()

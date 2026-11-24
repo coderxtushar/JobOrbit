@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query, status
 
 from app.api.deps import Authorized, DbSession, Llm, Profile
 from app.api.errors import ApiError
-from app.db.models import Application, ApplicationStatus, Outcome
+from app.db.models import Application, ApplicationEvent, ApplicationStatus, Outcome
 from app.db.repositories import (
     ApplicationQuery,
     ApplicationRepository,
@@ -30,7 +30,14 @@ from app.schemas.application import (
 )
 from app.schemas.common import Page
 from app.services.application_prep import ApplicationPreparationService
-from app.services.tracking import ApplicationTracker, TransitionRequest, blocking_questions
+from app.services.tracking import (
+    OPENED_EVENT_DETAIL,
+    ApplicationTracker,
+    TransitionRequest,
+    blocking_questions,
+    next_action,
+    was_opened,
+)
 from app.services.url_safety import inspect_url
 
 router = APIRouter(prefix="/api/applications", tags=["applications"], dependencies=[Authorized])
@@ -50,6 +57,8 @@ def _to_read(application: Application, session, *, detail: bool = False):
         "job_company": job.company if job else "",
         "job_url": safe_url,
         "blocking_questions": blocking_questions(application),
+        "next_action": next_action(application),
+        "employer_page_opened": was_opened(application),
     }
     if detail:
         updates["events"] = [
@@ -127,6 +136,42 @@ def read_application(
         raise ApiError(
             "not_found", f"application {application_id} was not found", status.HTTP_404_NOT_FOUND
         )
+    return _to_read(application, session, detail=True)
+
+
+@router.post(
+    "/{application_id}/record-opened",
+    response_model=ApplicationDetail,
+    summary="Record that you opened the employer's application page",
+)
+def record_opened(application_id: int, session: DbSession, profile: Profile) -> ApplicationDetail:
+    """Append an event noting the page was opened. The status is deliberately unchanged.
+
+    Opening a page is not submitting a form. Recording it separately lets the next-action
+    line distinguish "not started" from "opened but not yet recorded as submitted" without
+    ever implying an application was sent.
+    """
+    application = ApplicationRepository(session).get(application_id)
+    if application is None or application.profile_id != profile.id:
+        raise ApiError(
+            "not_found", f"application {application_id} was not found", status.HTTP_404_NOT_FOUND
+        )
+    if not was_opened(application):
+        application.events.append(
+            ApplicationEvent(
+                from_status=application.status,
+                to_status=application.status,
+                actor="user",
+                detail=OPENED_EVENT_DETAIL,
+            )
+        )
+        AuditRepository(session).record(
+            "application.page_opened",
+            entity_type="application",
+            entity_id=application.id,
+            detail={"status": application.status.value},
+        )
+        session.flush()
     return _to_read(application, session, detail=True)
 
 
@@ -209,3 +254,75 @@ def update_application(
     session.flush()
     session.refresh(application)
     return _to_read(application, session, detail=True)
+
+
+@router.get(
+    "/{application_id}/artifacts",
+    summary="Every version of the material prepared for an application",
+)
+def list_artifacts(application_id: int, session: DbSession, profile: Profile) -> list[dict]:
+    """Newest first. ``locked`` versions were part of a dispatched submission and are the
+    record of what the employer received; they can no longer change."""
+    from sqlalchemy import select
+
+    from app.db.models import ApplicationArtifact
+
+    application = session.get(Application, application_id)
+    if application is None or application.profile_id != profile.id:
+        raise ApiError(
+            "not_found", f"application {application_id} was not found", status.HTTP_404_NOT_FOUND
+        )
+    rows = session.scalars(
+        select(ApplicationArtifact)
+        .where(ApplicationArtifact.application_id == application_id)
+        .order_by(ApplicationArtifact.id.desc())
+    ).all()
+    return [
+        {
+            "id": row.id,
+            "kind": row.kind,
+            "label": row.label,
+            "content_sha256": row.content_sha256,
+            "byte_size": row.byte_size,
+            "created_at": row.created_at.isoformat(),
+            "locked": row.locked_at is not None,
+            "locked_at": row.locked_at.isoformat() if row.locked_at else None,
+            "preview": row.content[:600],
+        }
+        for row in rows
+    ]
+
+
+@router.post(
+    "/{application_id}/regenerate",
+    response_model=ApplicationDetail,
+    summary="Regenerate the drafts (resume variant, letter, answers) before submission",
+)
+def regenerate_application(
+    application_id: int, session: DbSession, profile: Profile, llm: Llm
+) -> ApplicationDetail:
+    """Re-run preparation. Earlier versions are kept, so a regenerated draft never
+    overwrites one that was sent; once an application may have reached the employer
+    this refuses, because its drafts are then the record of what was submitted."""
+    from app.db.repositories import DuplicateApplicationError
+
+    application = session.get(Application, application_id)
+    if application is None or application.profile_id != profile.id:
+        raise ApiError(
+            "not_found", f"application {application_id} was not found", status.HTTP_404_NOT_FOUND
+        )
+    job = JobRepository(session).get(application.job_id)
+    if job is None:
+        raise ApiError("not_found", "the job was deleted", status.HTTP_404_NOT_FOUND)
+    try:
+        prepared = ApplicationPreparationService(session, llm).prepare(
+            job, profile, include_cover_letter=True
+        )
+    except DuplicateApplicationError as error:
+        raise ApiError(
+            "already_submitted",
+            "This application may already be with the employer, so its drafts are kept as "
+            "the record of what was sent and cannot be regenerated.",
+            status.HTTP_409_CONFLICT,
+        ) from error
+    return _to_read(prepared.application, session, detail=True)

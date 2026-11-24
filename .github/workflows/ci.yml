@@ -108,10 +108,13 @@ jobs:
         # source must refuse discovery with a policy reason instead of returning data.
         run: pytest tests/test_compliance.py -q
 
-      - name: No scraping or browser-automation dependency may be introduced
+      - name: No scraping, stealth or CAPTCHA-solving dependency may be introduced
+        # Playwright is allowed: it fills an employer's own application form in the user's
+        # Chrome. Libraries whose purpose is scraping listings, hiding automation from a
+        # site, or solving CAPTCHAs are not.
         run: |
-          if grep -riE '^(playwright|selenium|puppeteer|undetected-chromedriver|cloudscraper|scrapy|beautifulsoup4|2captcha|anticaptcha)' requirements.txt; then
-            echo "::error::A scraping or browser-automation dependency was added. See docs/COMPLIANCE.md."
+          if grep -riE '^(selenium|puppeteer|undetected-chromedriver|playwright-stealth|selenium-stealth|cloudscraper|scrapy|beautifulsoup4|2captcha|anticaptcha|capsolver)' requirements.txt; then
+            echo "::error::A scraping, stealth or CAPTCHA-solving dependency was added. See docs/COMPLIANCE.md."
             exit 1
           fi
           echo "no prohibited dependency found"
