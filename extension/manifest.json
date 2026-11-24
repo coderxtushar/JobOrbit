@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "JobOrbit Capture",
+  "version": "0.1.0",
+  "description": "Send the job listing you are looking at to your local JobOrbit. Runs only when you click it.",
+  "minimum_chrome_version": "110",
+  "action": {
+    "default_title": "Send this job to JobOrbit",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+}

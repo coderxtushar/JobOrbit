@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JobOrbit Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <span class="brand">JobOrbit</span>
+      <span id="connection" class="pill pill-muted" role="status">Checking...</span>
+    </header>
+
+    <main>
+      <p id="extraction" class="note" aria-live="polite">Reading this page...</p>
+
+      <form id="capture" novalidate autocomplete="off">
+        <label>Title <span class="req" aria-hidden="true">*</span>
+          <input id="title" name="title" maxlength="400" required />
+        </label>
+        <label>Company <span class="req" aria-hidden="true">*</span>
+          <input id="company" name="company" maxlength="300" required />
+        </label>
+        <div class="row">
+          <label>Location
+            <input id="location" name="location" maxlength="300" />
+          </label>
+          <label>Employment type
+            <input id="employment_type" name="employment_type" maxlength="100" placeholder="Full-time" />
+          </label>
+        </div>
+        <div class="row">
+          <label>Posted
+            <input id="posted_at" name="posted_at" maxlength="100" placeholder="2026-11-20 or 3 days ago" />
+          </label>
+          <label>Listing URL <span class="req" aria-hidden="true">*</span>
+            <input id="url" name="url" type="url" maxlength="1200" required />
+          </label>
+        </div>
+        <label>Description
+          <textarea id="description" name="description" rows="7" maxlength="20000"></textarea>
+        </label>
+        <p id="counter" class="hint"></p>
+
+        <button id="send" type="submit" class="primary">Send to JobOrbit</button>
+      </form>
+
+      <section id="result" class="result" hidden aria-live="polite"></section>
+    </main>
+
+    <footer class="foot">
+      <span>Runs only when you click. Never applies for you.</span>
+      <a href="#" id="open-options">Options</a>
+    </footer>
+
+    <script src="config.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

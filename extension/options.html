@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JobOrbit Capture Options</title>
+    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body class="options">
+    <header class="bar">
+      <span class="brand">JobOrbit Capture</span>
+      <span id="connection" class="pill pill-muted" role="status">Not checked</span>
+    </header>
+    <main>
+      <form id="options" novalidate autocomplete="off">
+        <label>JobOrbit API address
+          <input id="apiBase" type="url" placeholder="http://127.0.0.1:8000" />
+        </label>
+        <p class="hint left">Must be on this computer: http://127.0.0.1 or http://localhost, any port.</p>
+
+        <label>API token (optional)
+          <input id="apiToken" type="password" placeholder="Only if JA_API_TOKEN is set" />
+        </label>
+        <p class="hint left">Stored in this browser's extension storage and sent only to the API address above.</p>
+
+        <label>Dashboard address
+          <input id="dashboardUrl" type="url" placeholder="http://localhost:8501" />
+        </label>
+
+        <div class="actions">
+          <button id="save" type="submit" class="primary">Save</button>
+          <button id="test" type="button" class="secondary">Test connection</button>
+        </div>
+        <p id="message" class="note" role="status" aria-live="polite"></p>
+      </form>
+
+      <section class="about">
+        <h2>What this extension can access</h2>
+        <ul>
+          <li>Only the tab you are looking at, and only after you click the toolbar button.</li>
+          <li>The listing's visible text, structured job data and page address. Never cookies,
+            passwords, form fields, browser storage, history or other tabs.</li>
+          <li>Your local JobOrbit API. It never contacts any other server and never applies to a job.</li>
+        </ul>
+      </section>
+    </main>
+    <script src="config.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -476,9 +476,9 @@ def test_mutating_endpoints_are_either_blocked_or_session_scoped() -> None:
     guarded_sources = "".join(
         path.read_text(encoding="utf-8") for path in sorted(routes_dir.glob("*.py"))
     )
-    # 8 original guards plus the 7 auto-apply safety controls. A new guard must be added
-    # here deliberately.
-    assert guarded_sources.count("refuse_in_demo_mode(settings,") == 15
+    # 8 original guards, plus 7 safety controls, 13 email routes, the capture route and the
+    # company-website fetch. A new guard must be added here deliberately.
+    assert guarded_sources.count("refuse_in_demo_mode(settings,") == 30
 
 
 # --------------------------------------------------------------------------------------

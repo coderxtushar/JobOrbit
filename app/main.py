@@ -14,10 +14,13 @@ from app.api.routes import (
     applications,
     autoapply,
     batches,
+    capture,
+    email,
     health,
     jobs,
     platforms,
     profile,
+    research,
     resumes,
     searches,
     sources,
@@ -143,6 +146,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(platforms.router)
     app.include_router(searches.router)
     app.include_router(sources.router)
+    app.include_router(email.router)
+    app.include_router(capture.router)
+    app.include_router(research.router)
     return app
 
 
