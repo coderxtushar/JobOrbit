@@ -46,6 +46,47 @@ EMPTY_METRICS: dict[str, Any] = {
 }
 
 
+EMPTY_ANALYTICS: dict[str, Any] = {
+    "discovery": {
+        "jobs_total": 0,
+        "jobs_scored": 0,
+        "jobs_unscored": 0,
+        "jobs_by_source": {},
+        "new_by_day": {},
+        "window_days": 14,
+        "import_runs_failed": 0,
+    },
+    "quality": {
+        "band_counts": {},
+        "confidence_counts": {},
+        "filtered_out": 0,
+        "duplicate_rate": 0.0,
+        "cross_source_rate": 0.0,
+        "false_merge_suspects": 0,
+        "freshness": {"current": 0, "stale": 0, "undated": 0},
+        "stale_rate": 0.0,
+        "undated_rate": 0.0,
+        "max_job_age_days": 30,
+        "labelled_precision": None,
+        "labelled_precision_note": "Not measured. Precision needs labelled listings.",
+    },
+    "outcomes": {
+        "applications_by_status": {},
+        "applications_by_outcome": {},
+        "applications_by_source": {},
+        "prepared": 0,
+        "marked_submitted": 0,
+        "confirmed": 0,
+        "interviews": 0,
+        "offers": 0,
+        "review_queue_size": 0,
+        "oldest_waiting_days": None,
+        "oldest_waiting_id": None,
+    },
+    "demo_mode": False,
+}
+
+
 class StubClient:
     """A client that answers every call with an empty result set."""
 
@@ -68,6 +109,9 @@ class StubClient:
     def estimated_metrics(self) -> dict:
         return {"estimated_minutes_saved": 0, "basis": "Estimate only: 0 prepared."}
 
+    def analytics(self) -> dict:
+        return dict(EMPTY_ANALYTICS)
+
     def import_runs(self, limit: int = 25) -> dict:
         return {"items": [], "total": 0, "limit": limit, "offset": 0}
 
@@ -82,6 +126,29 @@ class StubClient:
 
     def list_searches(self) -> list:
         return []
+
+    def submission_capabilities(self) -> dict:
+        return {
+            "supported_targets": [],
+            "platforms": [
+                {
+                    "key": "linkedin",
+                    "display_name": "LinkedIn",
+                    "submission_supported": False,
+                    "reason": "LinkedIn publishes no candidate-side application API.",
+                    "credential_owner": "none",
+                    "documented_api": False,
+                    "browser_submission_permitted": False,
+                    "manual_completion_required": True,
+                    "evidence_url": "https://www.linkedin.com/legal/user-agreement",
+                    "evidence_quote": "Use bots or other unauthorized automated methods",
+                }
+            ],
+            "note": "No job platform in scope publishes an authorized submission interface.",
+        }
+
+    def list_autoapply_runs(self, limit: int = 20, offset: int = 0) -> dict:
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
     def get_profile(self) -> dict:
         return {
@@ -681,6 +748,49 @@ class ScoredStubClient(StubClient):
     def get_job(self, job_id: int) -> dict:
         return dict(SCORED_JOB)
 
+    def get_job_explanation(self, job_id: int) -> dict:
+        return {
+            "job_id": job_id,
+            "sections": [
+                {
+                    "key": "strong_matches",
+                    "title": "Strong matches",
+                    "findings": [
+                        {
+                            "statement": "python — stated as a requirement; present in your profile",
+                            "source": "listing",
+                            "quote": "2+ years of Python",
+                        }
+                    ],
+                    "empty_note": "",
+                },
+                {
+                    "key": "downgrades",
+                    "title": "Why anything was held back",
+                    "findings": [],
+                    "empty_note": "Nothing was capped, demoted or filtered for this job.",
+                },
+            ],
+            "skills": [
+                {
+                    "skill": "python",
+                    "status": "in_profile",
+                    "evidence_class": "required",
+                    "note": "stated as a requirement; present in your profile",
+                    "quote": "2+ years of Python",
+                    "related_to": "",
+                },
+                {
+                    "skill": "react native",
+                    "status": "related_in_profile",
+                    "evidence_class": "preferred",
+                    "note": "your profile lists 'react', which shares a name",
+                    "quote": "React Native a plus",
+                    "related_to": "react",
+                },
+            ],
+        }
+
 
 @pytest.fixture
 def scored_pages(monkeypatch: pytest.MonkeyPatch) -> ScoredStubClient:
@@ -885,3 +995,367 @@ def test_the_saved_search_inputs_are_wrapped_in_a_form() -> None:
     assert not plain_buttons_with_save, (
         "a plain st.button next to a text input needs two clicks to save"
     )
+
+
+# --------------------------------------------------------------------------------------
+# Analytics
+# --------------------------------------------------------------------------------------
+
+
+class PopulatedAnalyticsClient(StubClient):
+    """Analytics for a search that found jobs, prepared one, and has no outcomes yet."""
+
+    def analytics(self) -> dict:
+        report = {key: dict(value) for key, value in EMPTY_ANALYTICS.items() if key != "demo_mode"}
+        report["discovery"].update(
+            {
+                "jobs_total": 120,
+                "jobs_scored": 100,
+                "jobs_unscored": 20,
+                "jobs_by_source": {"greenhouse": 70, "lever": 50},
+                "new_by_day": {"2026-10-30": 40, "2026-10-31": 80},
+            }
+        )
+        report["quality"].update(
+            {
+                "band_counts": {"low": 90, "review": 10},
+                "confidence_counts": {"low": 60, "medium": 40},
+                "duplicate_rate": 3.46,
+                "freshness": {"current": 60, "stale": 20, "undated": 40},
+                "stale_rate": 25.0,
+                "undated_rate": 33.33,
+            }
+        )
+        report["outcomes"].update(
+            {
+                "applications_by_status": {"READY_FOR_REVIEW": 1},
+                "prepared": 1,
+                "review_queue_size": 1,
+                "oldest_waiting_days": 9.0,
+                "oldest_waiting_id": 7,
+            }
+        )
+        report["demo_mode"] = False
+        return report
+
+
+@pytest.fixture
+def populated_analytics(monkeypatch: pytest.MonkeyPatch) -> PopulatedAnalyticsClient:
+    stub = PopulatedAnalyticsClient()
+    import ui.components as components
+
+    monkeypatch.setattr(components, "get_client", lambda: stub)
+    page = __import__("ui.views.analytics_page", fromlist=["render"])
+    monkeypatch.setattr(page, "get_client", lambda: stub, raising=False)
+    return stub
+
+
+def test_the_analytics_page_shows_an_empty_state_before_any_jobs(
+    stub_pages: StubClient,
+) -> None:
+    app = _render("analytics_page")
+
+    assert not app.exception
+    assert "Nothing to analyse yet" in _messages(app)
+
+
+def test_the_analytics_page_keeps_discovery_quality_and_outcomes_apart(
+    populated_analytics: PopulatedAnalyticsClient,
+) -> None:
+    app = _render("analytics_page")
+
+    assert not app.exception
+    text = _messages(app)
+    assert "Discovery" in text
+    assert "Quality of what was found" in text
+    assert "What actually happened" in text
+
+
+def test_the_analytics_page_says_precision_is_unmeasured(
+    populated_analytics: PopulatedAnalyticsClient,
+) -> None:
+    app = _render("analytics_page")
+
+    assert not app.exception
+    assert "Not measured" in _messages(app)
+
+
+def test_the_analytics_page_states_that_submission_is_never_inferred(
+    populated_analytics: PopulatedAnalyticsClient,
+) -> None:
+    app = _render("analytics_page")
+
+    text = _messages(app)
+    assert "A click is never counted" in text
+    assert "employer's own confirmation" in text
+
+
+def test_the_analytics_page_names_the_review_bottleneck(
+    populated_analytics: PopulatedAnalyticsClient,
+) -> None:
+    app = _render("analytics_page")
+
+    assert "bottleneck" in _messages(app)
+
+
+def test_the_analytics_page_separates_stale_from_undated(
+    populated_analytics: PopulatedAnalyticsClient,
+) -> None:
+    """An undated listing is neither fresh nor stale, and the page must say so."""
+    app = _render("analytics_page")
+
+    text = _messages(app)
+    assert "never assumed to be either current or stale" in text
+
+
+def test_demo_analytics_are_labelled_as_fictional(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DemoAnalyticsClient(PopulatedAnalyticsClient):
+        def analytics(self) -> dict:
+            report = super().analytics()
+            report["demo_mode"] = True
+            return report
+
+    stub = DemoAnalyticsClient()
+    import ui.components as components
+
+    monkeypatch.setattr(components, "get_client", lambda: stub)
+    page = __import__("ui.views.analytics_page", fromlist=["render"])
+    monkeypatch.setattr(page, "get_client", lambda: stub, raising=False)
+
+    app = _render("analytics_page")
+
+    assert not app.exception
+    assert "fictional demo data" in _messages(app)
+
+
+# --------------------------------------------------------------------------------------
+# Onboarding wizard
+# --------------------------------------------------------------------------------------
+
+
+def test_the_wizard_opens_on_the_first_step_with_a_progress_indicator(
+    stub_pages: StubClient,
+) -> None:
+    app = _render("onboarding_page")
+
+    assert not app.exception
+    bars = list(app.get("progress"))
+    assert len(bars) == 1, "the wizard must show exactly one progress indicator"
+    assert "Step 1 of 4" in str(bars[0].proto.text)
+    assert "Career goals" in str(bars[0].proto.text)
+
+
+def test_the_wizard_writes_nothing_until_the_final_step(stub_pages: StubClient) -> None:
+    """Abandoning the wizard half-way must leave the stored profile untouched."""
+    import ast
+    from pathlib import Path
+
+    source = Path(PROJECT_ROOT / "ui" / "views" / "onboarding_page.py").read_text()
+    tree = ast.parse(source)
+
+    writing_functions = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Attribute) and inner.attr in {
+                "update_profile",
+                "complete_onboarding",
+            }:
+                writing_functions.add(node.name)
+
+    assert writing_functions == {"_review"}, (
+        "only the review step may write the profile, found: " + str(sorted(writing_functions))
+    )
+
+
+def test_the_wizard_labels_hard_constraints_separately_from_soft_preferences(
+    stub_pages: StubClient,
+) -> None:
+    app = _render("onboarding_page")
+    app.session_state["onboarding_step"] = 2
+    app.run(timeout=30)
+
+    assert not app.exception
+    text = _messages(app)
+    assert "hard constraint" in text.lower()
+    assert "soft preference" in text.lower()
+    assert "only changes the order" in text
+
+
+def test_the_review_step_shows_a_summary_before_saving(stub_pages: StubClient) -> None:
+    app = _render("onboarding_page")
+    app.session_state["onboarding_step"] = 3
+    app.run(timeout=30)
+
+    assert not app.exception
+    text = _messages(app)
+    assert "Nothing has been written yet" in text
+    assert "Hard constraints" in text
+    assert "Soft preferences" in text
+
+
+def test_the_wizard_shows_resume_facts_as_read_only(stub_pages: StubClient) -> None:
+    app = _render("onboarding_page")
+    app.session_state["onboarding_step"] = 3
+    app.run(timeout=30)
+
+    text = _messages(app)
+    assert "not editable here" in text
+    assert "Resume and profile" in text
+
+
+def test_the_wizard_never_fills_an_unanswered_sensitive_field(stub_pages: StubClient) -> None:
+    app = _render("onboarding_page")
+    app.session_state["onboarding_step"] = 3
+    app.run(timeout=30)
+
+    assert "never guessed for you" in _messages(app)
+
+
+def test_the_wizard_advances_in_one_click() -> None:
+    """Streamlit commits a text area on blur, so a bare Next button needs two clicks.
+
+    Asserted on the syntax tree rather than the rendered page because ``AppTest.button``
+    lists form submit buttons alongside ordinary ones, so a rendered check cannot tell the
+    two apart and would pass against the broken two-click version.
+    """
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(PROJECT_ROOT / "ui" / "views" / "onboarding_page.py").read_text())
+
+    forms = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.With)
+        and any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Attribute)
+            and item.context_expr.func.attr == "form"
+            for item in node.items
+        )
+    ]
+    assert forms, "each input step must share a form with its Next button"
+
+    submits = [
+        node
+        for form in forms
+        for node in ast.walk(form)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "form_submit_button"
+    ]
+    assert submits, "Next must be the form's submit button"
+
+    bare_next = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "button"
+        and any(isinstance(arg, ast.Constant) and arg.value == "Next" for arg in node.args)
+    ]
+    assert not bare_next, "Next must never be a plain button; the click would be swallowed"
+
+
+# --------------------------------------------------------------------------------------
+# Auto-apply page
+# --------------------------------------------------------------------------------------
+
+
+def test_the_autoapply_page_states_that_no_platform_permits_submission(
+    stub_pages: StubClient,
+) -> None:
+    app = _render("autoapply_page")
+    assert not app.exception
+    text = _messages(app)
+    assert "No job platform in scope" in text
+    assert "No runs yet" in text
+
+
+def test_the_autoapply_page_never_merges_prepared_into_submitted() -> None:
+    """Prepared and confirmed are distinct figures, and neither is summed with the other.
+
+    Asserted on the module source because the two numbers are the whole point of the
+    page: a single "processed" total would let a screen imply applications were sent.
+    """
+    source = (PROJECT_ROOT / "ui" / "views" / "autoapply_page.py").read_text(encoding="utf-8")
+    assert "prepared_count" in source
+    assert "confirmed_count" in source
+    assert "ready, not sent" in source
+    assert "provider returned a confirmation" in source
+
+    summed = [
+        line
+        for line in source.splitlines()
+        if "confirmed_count" in line and ("prepared_count" in line or "+" in line)
+    ]
+    assert not summed, f"confirmed submissions must not be combined with anything: {summed}"
+
+
+def test_every_workspace_page_renders_exactly_one_top_level_heading() -> None:
+    """A page without ``st.title`` renders no ``<h1>``, which breaks heading order.
+
+    Caught in a browser on the auto-apply page, which used only ``section_header`` — that
+    renders a styled div, not a heading. Asserted on the source because the rendered check
+    needs a running server.
+    """
+    views = sorted((PROJECT_ROOT / "ui" / "views").glob("*_page.py"))
+    assert len(views) >= 15, "expected every workspace page to be discovered"
+    missing = [path.name for path in views if "st.title(" not in path.read_text(encoding="utf-8")]
+    assert not missing, f"these pages render no <h1>: {missing}"
+
+    """An invalid icon raises on the first render and takes the whole navigation with it.
+
+    Checked by parsing the entrypoint rather than rendering, so the failure names the icon
+    instead of surfacing as a blank page.
+    """
+    import ast
+
+    from streamlit.string_util import validate_icon_or_emoji
+
+    source = (PROJECT_ROOT / "ui" / "streamlit_app.py").read_text(encoding="utf-8")
+    icons: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Page"
+        ):
+            icons += [
+                keyword.value.value
+                for keyword in node.keywords
+                if keyword.arg == "icon" and isinstance(keyword.value, ast.Constant)
+            ]
+    assert len(icons) >= 20, "expected an icon on every page"
+    for icon in icons:
+        validate_icon_or_emoji(icon)
+
+
+def test_every_navigation_icon_is_one_streamlit_accepts() -> None:
+    """An invalid icon raises on the first render and takes the whole navigation with it.
+
+    Checked by parsing the entrypoint rather than rendering, so a failure names the icon
+    instead of surfacing as a blank page.
+    """
+    import ast
+
+    from streamlit.string_util import validate_icon_or_emoji
+
+    source = (PROJECT_ROOT / "ui" / "streamlit_app.py").read_text(encoding="utf-8")
+    icons: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Page"
+        ):
+            icons += [
+                keyword.value.value
+                for keyword in node.keywords
+                if keyword.arg == "icon" and isinstance(keyword.value, ast.Constant)
+            ]
+    assert len(icons) >= 20, "expected an icon on every page"
+    for icon in icons:
+        validate_icon_or_emoji(icon)

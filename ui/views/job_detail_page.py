@@ -19,6 +19,77 @@ from ui.components import (
     skill_chips,
 )
 
+SOURCE_LABELS = {
+    "listing": "from the listing",
+    "profile": "from your profile",
+    "scoring": "from the scoring rules",
+}
+
+SKILL_STATUS_LABELS = {
+    "in_profile": "In your profile",
+    "related_in_profile": "Related name only, not demonstrated",
+    "not_in_profile": "Not found in your profile",
+    "not_in_listing": "Yours; this listing does not ask about it",
+}
+
+SKILL_STATUS_ORDER = ("in_profile", "related_in_profile", "not_in_profile", "not_in_listing")
+
+
+def _render_grounded(client, job_id: int) -> None:
+    try:
+        explanation = client.get_job_explanation(job_id)
+    except ApiClientError as exc:
+        st.caption(f"A grounded breakdown is not available: {exc.message}")
+        return
+
+    section_header("Why this job matches")
+    st.caption(
+        "Each finding names where it came from. Quotes are the listing's own words, so you "
+        "can disagree with the scorer on the evidence rather than take it on trust."
+    )
+    for section in explanation.get("sections", []):
+        findings = section.get("findings") or []
+        with st.expander(f"{section['title']} ({len(findings)})", expanded=bool(findings)):
+            if not findings:
+                st.caption(section.get("empty_note") or "Nothing to report here.")
+                continue
+            for finding in findings:
+                label = SOURCE_LABELS.get(finding.get("source", ""), finding.get("source", ""))
+                st.markdown(f"- {finding['statement']}  \n  _{label}_")
+                if finding.get("quote"):
+                    st.caption(f"“{finding['quote']}”")
+
+    section_header("Skill gap")
+    st.caption(
+        "Required, preferred and incidental mentions are kept apart, and a skill that only "
+        "shares a name with one of yours is reported as such rather than counted as a match."
+    )
+    skills = explanation.get("skills", [])
+    if not skills:
+        st.caption("This listing names no skills, so there is no gap to report.")
+        return
+    rows = sorted(
+        skills,
+        key=lambda item: (
+            SKILL_STATUS_ORDER.index(item["status"])
+            if item["status"] in SKILL_STATUS_ORDER
+            else len(SKILL_STATUS_ORDER)
+        ),
+    )
+    st.dataframe(
+        [
+            {
+                "skill": row["skill"],
+                "status": SKILL_STATUS_LABELS.get(row["status"], row["status"]),
+                "listing says": row.get("evidence_class") or "not mentioned",
+                "evidence": row.get("quote") or "—",
+            }
+            for row in rows
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+
 
 def render() -> None:
     st.title("Job detail and match explanation")
@@ -44,6 +115,10 @@ def render() -> None:
     }
     default_index = 0
     pending = st.session_state.get("detail_job_id")
+    linked = st.query_params.get("job_id")
+    if linked and str(linked).isdigit():
+        # Deep link, e.g. from the capture extension: /job?job_id=42.
+        pending = int(str(linked))
     if pending in options.values():
         default_index = list(options.values()).index(pending)
 
@@ -176,9 +251,11 @@ def render() -> None:
             )
         if match.get("filtered_out"):
             st.error("Excluded by your hard filters: " + "; ".join(match.get("filter_reasons", [])))
-        with st.expander("Full reasoning", expanded=True):
+        with st.expander("Full reasoning", expanded=False):
             for line in match.get("explanation", []):
                 st.markdown(f"- {line}")
+
+        _render_grounded(client, job_id)
 
     st.divider()
     actions = st.columns([1, 1, 1, 2])

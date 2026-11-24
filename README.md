@@ -15,10 +15,14 @@ because the design would be dishonest otherwise:
    citation is in [docs/COMPLIANCE.md](docs/COMPLIANCE.md) and the full per-platform table
    is in [docs/SOURCES.md](docs/SOURCES.md). India-relevant boards, with the measured
    results of a real run, are in [docs/INDIA_SOURCES.md](docs/INDIA_SOURCES.md).
-2. **It does not submit applications.** There is no endpoint, no code path and no button
-   that clicks Apply. Indeed's terms state plainly that "use of any automation, scripting,
-   or bots to automate the Indeed Apply process ... is prohibited". The app prepares the
-   application and opens the employer's own page so you submit it.
+2. **It never applies behind a platform's back.** It does not log in to LinkedIn, Naukri,
+   Indeed or Wellfound to click Apply; those platforms prohibit it ("use of any
+   automation, scripting, or bots to automate the Indeed Apply process ... is
+   prohibited"), and for them the app prepares the application and opens the page so you
+   submit it. What it *can* do, once you switch it on, is fill and submit an **employer's
+   own Greenhouse, Lever or Ashby application form** in its own Chrome window — the same
+   public form you would fill by hand — from answers you have verified. See
+   [Auto-apply in the browser](#auto-apply-in-the-browser).
 
 Everything works with **no API key**. The LLM is optional and only ever drafts prose from
 facts you have already verified.
@@ -92,19 +96,135 @@ a template render, which is asserted two ways — a test walks its AST for banne
 a browser run confirms no database file is created. Its stylesheet hides the sidebar, so
 the operational chrome only appears once you are inside.
 
-**The workspace** is 16 pages across four sections. Routing is `st.navigation`, so every
+**The workspace** is 20 pages across four sections. Routing is `st.navigation`, so every
 page has a real URL that survives refresh, bookmarking and the back button:
 
 | Section | Pages |
 |---|---|
-| Main | Overview · Resume and profile · Job discovery · Job feed · Job detail |
+| Main | Overview · Set up your search · Resume and profile · Job discovery · Job feed · Job detail · Saved searches |
 | Platform assistants | Naukri · LinkedIn · Indeed · Wellfound · ATS & other platforms |
-| Applications | Bulk preparation · Action inbox · Review queue · Application tracker |
+| Applications | Auto-apply · Bulk preparation · Action inbox · Review queue · Application tracker · Analytics |
 | System | Settings and sources · Logs and diagnostics |
 
 `/overview`, `/linkedin`, `/review` and the rest are all deep-linkable. The embedded API is
 started by one wrapper shared by every workspace page, so it comes up lazily on whichever
 page you open first — including a deep link — and never from the landing page.
+
+## The auto-apply engine
+
+One click authorises a whole run inside the scope you set: discover from the authorized
+sources, score, filter, prepare each application, dispatch it **where a provider permits
+dispatch**, verify the outcome, and record what happened. `POST /api/autoapply/runs` is
+that click, and `dry_run` defaults to true so the first run prepares everything and sends
+nothing.
+
+**Where it can dispatch.** By default, nowhere: every platform reports submission
+unsupported with its own citation ([docs/SUBMISSION_FEASIBILITY.md](docs/SUBMISSION_FEASIBILITY.md)).
+With `JA_BROWSER_SUBMISSION_ENABLED=true`, jobs whose application form is hosted on
+**Greenhouse, Lever or Ashby** are filled and submitted in the browser — see
+[Auto-apply in the browser](#auto-apply-in-the-browser). LinkedIn, Indeed, Naukri, Wellfound,
+SmartRecruiters, Workable and unrecognised career sites stay unsupported.
+
+The loopback test server (`tests/support/application_server.py`) is still the provider the
+API-submission path is verified against. It is unregistered unless
+`JA_LOCAL_SUBMISSION_BASE_URL` is set, and refuses any non-loopback address.
+
+### Auto-apply in the browser
+
+```bash
+# .env
+JA_BROWSER_SUBMISSION_ENABLED=true
+JA_GREENHOUSE_BOARDS=groww,druva          # the company boards to discover from
+JA_LEVER_BOARDS=cred,meesho
+JA_ASHBY_BOARDS=sarvam,atlan
+```
+
+Restart the API (after `.venv/bin/alembic upgrade head` if you are upgrading), then on the
+**Auto-apply** page press **Build preflight**. The preflight lists every job in scope with
+its score, evidence, location and experience fit, the resume and answers that would be
+sent, the questions still open and whether its platform can be submitted to. Jobs a hard
+constraint removes are listed with the reason. Untick anything you do not want, run once
+with **Dry run on** (each form is filled and screenshotted without being submitted), then
+build the preflight again with Dry run off and start the run. A live run covers only the
+jobs ticked in a current preflight.
+
+For every job, in order:
+
+1. The employer's form opens in JobOrbit's **own Chrome profile** (`var/browser/chrome`,
+   never your everyday profile). Nothing is ever logged into for you.
+2. Every question is read off the live page — text boxes, selects, comboboxes, radios,
+   Ashby's yes/no buttons, checkbox groups, file inputs, including shadow DOM.
+3. Each question is matched to a stored answer. **Anything not on file is raised in the
+   Action inbox and that job waits**; answer it once and every later form asking the same
+   thing is filled from it. "Years of experience with Java" is never answered with your
+   total experience; a consent box is ticked only from your own answer to that exact text.
+4. Your **uploaded resume PDF** is attached.
+5. The page is checked against the queued job's title and company — before filling and
+   again just before Submit — so a different job that happens to be open is never applied to.
+6. Submit is pressed, and the outcome is read back: a new confirmation message or a
+   confirmation page counts as **submitted and confirmed**; a CAPTCHA leaves the tab open as
+   **needs you**; a form error is **failed** (nothing was accepted); silence is **outcome
+   unverified**, which is never retried.
+
+Pace and limits: a randomised pause between every action and 20–60 s between applications,
+at most `JA_BROWSER_DAILY_SUBMISSION_CAP` (default 25) a day, and a live run works in the
+background so Pause and Stop take effect between jobs. CAPTCHAs are never solved and
+automation is never hidden from the site. Settings are in [Configuration](#configuration).
+
+A run reports these separately and never sums them:
+
+| Figure | Meaning |
+|---|---|
+| eligible | matched the run's scope |
+| prepared | a complete application exists — **not sent** |
+| submitted and confirmed | a provider acknowledged receipt and returned an identifier |
+| needs an answer | a required answer is missing, or a CAPTCHA/MFA needs a person |
+| platform permits none | prepared for you to send yourself |
+| outcome unverified | the request left this machine and nothing came back |
+
+The last row is the one worth understanding: it is **never retried automatically**, because
+retrying an unknown outcome is how one application silently becomes two. Open the attempt's
+**Evidence and timeline** to recheck the tab, or record what you found ("it was submitted",
+with your evidence, or "it was not submitted", which lets a later run try again).
+
+#### Reliability
+
+| Mechanism | What it guarantees |
+|---|---|
+| Checkpoints | `submit_requested` is committed *before* Submit is pressed. A worker that dies after it leaves an unknown outcome, never a silent retry; one that dies before it leaves a safe retry. |
+| Crash recovery | A run whose heartbeat is older than `JA_RUN_STALE_AFTER_S` is marked interrupted at start-up and its in-flight attempt settled from its checkpoint. |
+| Job locks | One worker per job across runs and processes; a dead worker's lock expires after `JA_JOB_LOCK_TTL_S`. |
+| Duplicate check | Re-read immediately before dispatch: a job you marked submitted meanwhile, or that another run reached, is not sent. |
+| Retry policy | Only transient failures (page load, browser crash, timeout, upload) are retried, with exponential backoff from `JA_RETRY_BACKOFF_S`. A wrong page, a closed posting or a rejected form is not. |
+| Circuit breaker | `JA_CIRCUIT_BREAKER_THRESHOLD` consecutive platform failures (CAPTCHAs, timeouts, unreadable outcomes) pause that platform for 30 minutes. |
+| Emergency stop | Cancels every run, refuses new ones and is checked at the last checkpoint before Submit, until you clear it. |
+| MFA / CAPTCHA / sign-in | Detected and handed to you with the tab left open. Never solved, read or bypassed. |
+| Evidence | Every attempt keeps its answers sent (sensitive ones masked), locked copies of the resume hash, answers and profile snapshot, a redacted event timeline, its duration, and an owner-only screenshot served only through the authorised API. Kept `JA_EVIDENCE_RETENTION_DAYS` days. |
+
+Salary questions are answered in the unit the form asks for. A saved "12 LPA" is typed into
+a free-text "Expected CTC" box as it is, but a form asking for a monthly figure, USD or a
+bare LPA number gets nothing until you approve the converted value, which is then kept for
+that unit. Current and expected pay are never substituted for each other.
+
+### Email tracking, job capture, research and interview prep
+
+- **Email tracking** (opt-in, read-only Gmail OAuth). Job-related mail is classified
+  (confirmation, rejection, interview, assessment, offer...), matched to applications, and
+  turned into *suggested* status changes you accept or dismiss. Nothing is applied
+  automatically; ambiguous matches wait in a review inbox. Setup, scopes and what is stored
+  are in [docs/EMAIL_TRACKING.md](docs/EMAIL_TRACKING.md). Without Gmail you can paste an
+  email on the **Email tracking** page.
+- **Job capture extension** for platforms with no discovery integration (LinkedIn, Naukri,
+  Indeed, Wellfound, careers pages). It runs only when you click it, reads only the page you
+  are on, and sends the listing into the normal pipeline (deduplicated, scored, explained).
+  It never submits. See [extension/README.md](extension/README.md).
+- **Company research** built only from sources it can cite (your stored listings, their
+  "About" sections, optionally the company website you name), and **interview preparation**
+  with job-, resume-, project- and gap-based questions, mock-interview practice and your
+  own round notes. Both are on the **Company and interview prep** page.
+- **Outcome analytics**: attempts, confirmations, unknown outcomes, interviews and offers by
+  source, job family, employer and score band. Rates need at least five sent applications;
+  "time saved" is labelled as an estimate.
 
 ### Platform assistants
 
@@ -334,7 +454,7 @@ Cosmetic. Install it for faster reloads (`pip install watchdog`) or ignore it.
 ## Architecture
 
 ```
-ui/            Landing page + workspace (16 pages). Talks to the backend only over HTTP.
+ui/            Landing page + workspace (20 pages). Talks to the backend only over HTTP.
   │  http
 app/api/       FastAPI routers, Pydantic validation, one error envelope
 app/services/  business logic: parsing, normalization, dedup, filters, matching,
@@ -466,6 +586,15 @@ freshness. The password is read from the environment per run and never stored.
   loopback/private/metadata addresses are rejected and the listing is kept without a link.
 - Logs are JSON with secret keys redacted and long values truncated, so resume text and
   credentials cannot reach a log file.
+- Screenshots (`var/screenshots`, mode 600) may show your answers, so they are never served
+  by URL, only through the authorised API, and are deleted after
+  `JA_EVIDENCE_RETENTION_DAYS`. Staged resume copies are deleted after each attempt.
+- Log lines and attempt events pass through a redactor that removes email addresses, phone
+  numbers, tokens and secret-bearing URL parameters.
+- Gmail tokens live in the macOS Keychain (or a mode-600 file when no keychain exists),
+  never in the database or `.env`. The scope is `gmail.readonly`.
+- Keep `.env` owner-only: `chmod 600 .env`.
+- The full audit is in [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).
 - To delete everything: stop both processes and remove `var/`.
 
 ---
@@ -489,6 +618,24 @@ Every variable, its default and its effect are documented in
 | `JA_SCHEDULER_ENABLED` | `false` | Background discovery. Nothing runs in the background while false |
 | `JA_DISPLAY_TIMEZONE` | `Asia/Kolkata` | Display only; all timestamps are stored in UTC |
 | `JA_EMAIL_INGEST_ENABLED` | `false` | Opt-in mailbox reading |
+| `JA_BROWSER_SUBMISSION_ENABLED` | `false` | Fill and submit Greenhouse/Lever/Ashby forms in the browser during live auto-apply runs |
+| `JA_BROWSER_DAILY_SUBMISSION_CAP` | `25` | Most applications submitted through the browser per day |
+| `JA_BROWSER_MAX_CONCURRENT_PER_PLATFORM` | `1` | Simultaneous browser submissions on one platform |
+| `JA_CIRCUIT_BREAKER_THRESHOLD` | `3` | Consecutive failures that pause a platform for 30 minutes |
+| `JA_JOB_LOCK_TTL_S` | `900` | Lease on a job's submission lock |
+| `JA_RUN_STALE_AFTER_S` | `180` | Heartbeat age after which a run counts as interrupted |
+| `JA_RETRY_BACKOFF_S` | `30` | First retry delay for transient failures, doubled each time |
+| `JA_EVIDENCE_RETENTION_DAYS` | `30` | Screenshots and browser events are deleted after this |
+| `JA_EVIDENCE_SCREENSHOTS` | `true` | Screenshot every browser attempt's outcome |
+| `JA_EMAIL_TRACKING_ENABLED` | `false` | Allow connecting Gmail read-only |
+| `JA_GMAIL_CLIENT_ID` / `JA_GMAIL_CLIENT_SECRET` | empty | Your own Desktop OAuth client |
+| `JA_SECRET_BACKEND` | `auto` | `keychain` or `file` for OAuth tokens |
+| `JA_USD_INR_RATE` | empty | Only used to show USD salaries in INR; never guessed |
+| `JA_COMPANY_RESEARCH_EXTERNAL` | `false` | Allow fetching a company website you name |
+| `JA_MINUTES_PER_MANUAL_APPLICATION` | `12` | Basis of the "time saved" estimate |
+| `JA_BROWSER_BETWEEN_APPLICATIONS_MIN_S` / `_MAX_S` | `20` / `60` | Random pause between two submitted applications |
+| `JA_BROWSER_PROFILE_DIR` | `var/browser/chrome` | JobOrbit's own Chrome profile; never point it at your everyday one |
+| `JA_BROWSER_HEADLESS` | `false` | Keep false: you need to see the window to finish CAPTCHAs |
 
 Optional LLM support: `.venv/bin/pip install -e '.[llm]'`.
 
@@ -498,6 +645,12 @@ Optional LLM support: `.venv/bin/pip install -e '.[llm]'`.
 
 These are real and deliberate, not oversights.
 
+0. **Browser submission covers three form providers.** Greenhouse, Lever and Ashby hosted
+   forms are filled and submitted; a Greenhouse job whose listing points at the company's own
+   careers site (not a `greenhouse.io` URL) is not yet routed to its hosted form. All three
+   providers run an invisible CAPTCHA; when it escalates to a visible challenge the job
+   becomes *needs you*, so some share of applications will always end with you pressing
+   Submit. Salary answers are sent as recorded — there is no LPA/annual/monthly conversion.
 1. **No live job search.** The central limitation. No platform in scope offers a jobseeker
    search API, so there is no compliant way to fetch listings automatically. Discovery is
    file import plus opt-in email alerts. The adapter interface is complete, so an

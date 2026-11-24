@@ -109,6 +109,9 @@ class ApiClient:
     def estimated_metrics(self) -> dict:
         return self._request("GET", "/api/metrics/estimated")
 
+    def analytics(self) -> dict:
+        return self._request("GET", "/api/metrics/analytics")
+
     def duplication_metrics(self, suspect_limit: int = 25) -> dict:
         return self._request(
             "GET", "/api/metrics/duplication", params={"suspect_limit": suspect_limit}
@@ -130,6 +133,9 @@ class ApiClient:
 
     def update_profile(self, payload: dict) -> dict:
         return self._request("PUT", "/api/profile", json=payload)
+
+    def complete_onboarding(self) -> dict:
+        return self._request("POST", "/api/profile/onboarding-complete")
 
     # ---------------- resumes ----------------
 
@@ -192,6 +198,9 @@ class ApiClient:
     def get_job(self, job_id: int) -> dict:
         return self._request("GET", f"/api/jobs/{job_id}")
 
+    def get_job_explanation(self, job_id: int) -> dict:
+        return self._request("GET", f"/api/jobs/{job_id}/explanation")
+
     def shortlist(self, job_id: int) -> dict:
         return self._request("POST", f"/api/jobs/{job_id}/shortlist")
 
@@ -223,6 +232,9 @@ class ApiClient:
     def get_application(self, application_id: int) -> dict:
         return self._request("GET", f"/api/applications/{application_id}")
 
+    def record_opened(self, application_id: int) -> dict:
+        return self._request("POST", f"/api/applications/{application_id}/record-opened")
+
     def update_application(self, application_id: int, payload: dict) -> dict:
         return self._request("PATCH", f"/api/applications/{application_id}", json=payload)
 
@@ -245,6 +257,98 @@ class ApiClient:
 
     def resume_batch(self, run_id: int) -> dict:
         return self._request("POST", f"/api/batches/{run_id}/resume")
+
+    # ---------------- auto-apply ----------------
+
+    def submission_capabilities(self) -> dict:
+        return self._request("GET", "/api/autoapply/capabilities")
+
+    def preview_autoapply(self, payload: dict) -> dict:
+        return self._request("POST", "/api/autoapply/preview", json=payload)
+
+    def start_autoapply(self, payload: dict, *, background: bool = False) -> dict:
+        params = {"run_in_background": "true"} if background else None
+        return self._request("POST", "/api/autoapply/runs", json=payload, params=params)
+
+    def list_autoapply_runs(self, limit: int = 20, offset: int = 0) -> dict:
+        return self._request("GET", "/api/autoapply", params={"limit": limit, "offset": offset})
+
+    def get_autoapply_run(self, run_id: int) -> dict:
+        return self._request("GET", f"/api/autoapply/runs/{run_id}")
+
+    def pause_autoapply(self, run_id: int) -> dict:
+        return self._request("POST", f"/api/autoapply/runs/{run_id}/pause")
+
+    def resume_autoapply(self, run_id: int) -> dict:
+        return self._request("POST", f"/api/autoapply/runs/{run_id}/resume")
+
+    def cancel_autoapply(self, run_id: int) -> dict:
+        return self._request("POST", f"/api/autoapply/runs/{run_id}/cancel")
+
+    def autoapply_report(self, run_id: int) -> str:
+        """Plain-text run report.
+
+        ``_request`` falls back to ``response.text`` when the body is not JSON, which is
+        what this endpoint returns, so the report arrives ready to download unchanged.
+        """
+        return str(self._request("GET", f"/api/autoapply/runs/{run_id}/report") or "")
+
+    def autoapply_preflight(self, payload: dict) -> dict:
+        return self._request("POST", "/api/autoapply/preflight", json=payload)
+
+    def autoapply_preferences(self) -> dict:
+        return self._request("GET", "/api/autoapply/preferences")
+
+    def save_autoapply_preferences(self, payload: dict) -> dict:
+        return self._request("PUT", "/api/autoapply/preferences", json=payload)
+
+    def autoapply_control(self) -> dict:
+        return self._request("GET", "/api/autoapply/control")
+
+    def emergency_stop(self, reason: str = "") -> dict:
+        return self._request("POST", "/api/autoapply/emergency-stop", json={"reason": reason})
+
+    def clear_emergency_stop(self) -> dict:
+        return self._request("POST", "/api/autoapply/emergency-stop/clear")
+
+    def reset_circuit(self, target: str) -> dict:
+        return self._request("POST", f"/api/autoapply/circuits/{target}/reset")
+
+    def cleanup_evidence(self) -> dict:
+        return self._request("POST", "/api/autoapply/evidence/cleanup")
+
+    def get_attempt(self, attempt_id: int) -> dict:
+        return self._request("GET", f"/api/autoapply/attempts/{attempt_id}")
+
+    def attempt_evidence(self, attempt_id: int) -> bytes:
+        """The screenshot bytes, fetched through the authorised API (never a public URL)."""
+        url = f"{self.base_url.rstrip('/')}/api/autoapply/attempts/{attempt_id}/evidence"
+        try:
+            response = requests.get(url, headers=self._headers, timeout=self.timeout)
+        except requests.exceptions.RequestException as exc:
+            raise ApiClientError(f"Cannot reach the API at {self.base_url}.") from exc
+        if response.status_code >= 400:
+            raise ApiClientError(f"HTTP {response.status_code}", code="not_found")
+        return response.content
+
+    def recheck_attempt(self, attempt_id: int) -> dict:
+        return self._request("POST", f"/api/autoapply/attempts/{attempt_id}/recheck")
+
+    def resolve_attempt(self, attempt_id: int, outcome: str, evidence: str = "") -> dict:
+        return self._request(
+            "POST",
+            f"/api/autoapply/attempts/{attempt_id}/resolve",
+            json={"outcome": outcome, "evidence": evidence},
+        )
+
+    def outcome_analytics(self) -> dict:
+        return self._request("GET", "/api/metrics/outcomes")
+
+    def list_artifacts(self, application_id: int) -> list[dict]:
+        return self._request("GET", f"/api/applications/{application_id}/artifacts")
+
+    def regenerate_application(self, application_id: int) -> dict:
+        return self._request("POST", f"/api/applications/{application_id}/regenerate")
 
     # ---------------- answer bank ----------------
 

@@ -22,6 +22,7 @@ from ui.theme import (
     confidence_badge,
     esc,
     evidence_block,
+    fit_row,
     inject_css,
     metric_card,
     monogram,
@@ -69,6 +70,7 @@ __all__ = [
     "display_timezone",
     "empty_state",
     "evidence_block",
+    "fit_row",
     "get_client",
     "inject_css",
     "job_card",
@@ -265,6 +267,7 @@ def job_card(job: dict[str, Any], *, key_prefix: str = "", on_change=None) -> No
                 rows.append(skill_row("Not in profile", match["missing_required_skills"], "amber"))
             if match.get("uncertain_requirements"):
                 rows.append(skill_row("Uncertain", match["uncertain_requirements"], "outline"))
+            rows.append(fit_row(match.get("category_scores") or {}))
             st.markdown("".join(rows), unsafe_allow_html=True)
 
             if match.get("uncertain_requirements"):

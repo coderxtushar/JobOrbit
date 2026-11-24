@@ -31,15 +31,20 @@ from ui.components import require_api  # noqa: E402
 from ui.embedded_api import ensure_api_running  # noqa: E402
 from ui.theme import inject_css  # noqa: E402
 from ui.views import (  # noqa: E402
+    analytics_page,
     applications_page,
+    autoapply_page,
     batch_page,
     diagnostics_page,
     discovery_page,
+    email_page,
     inbox_page,
     job_detail_page,
     jobs_page,
+    onboarding_page,
     overview_page,
     platform_page,
+    research_page,
     resume_page,
     review_page,
     searches_page,
@@ -77,8 +82,9 @@ def _sidebar_status() -> dict | None:
     )
     st.sidebar.divider()
     st.sidebar.info(
-        "JobOrbit never submits an application. It prepares one and opens the employer's "
-        "own page so you submit it yourself."
+        "JobOrbit submits only when you switch browser submission on, and only on "
+        "Greenhouse, Lever and Ashby forms, for jobs you approved in a preflight. Everything "
+        "else is prepared for you to submit yourself."
     )
     return health
 
@@ -137,6 +143,12 @@ OVERVIEW = st.Page(
 _MAIN = [
     OVERVIEW,
     st.Page(
+        _workspace(onboarding_page.render),
+        title="Set up your search",
+        icon=":material/tune:",
+        url_path="setup",
+    ),
+    st.Page(
         _workspace(resume_page.render),
         title="Resume and profile",
         icon=":material/description:",
@@ -177,6 +189,12 @@ _PLATFORMS = [
 
 _APPLICATIONS = [
     st.Page(
+        _workspace(autoapply_page.render),
+        title="Auto-apply",
+        icon=":material/bolt:",
+        url_path="autoapply",
+    ),
+    st.Page(
         _workspace(batch_page.render),
         title="Bulk preparation",
         icon=":material/layers:",
@@ -199,6 +217,24 @@ _APPLICATIONS = [
         title="Application tracker",
         icon=":material/track_changes:",
         url_path="tracker",
+    ),
+    st.Page(
+        _workspace(email_page.render),
+        title="Email tracking",
+        icon=":material/mail:",
+        url_path="email",
+    ),
+    st.Page(
+        _workspace(research_page.render),
+        title="Company and interview prep",
+        icon=":material/school:",
+        url_path="research",
+    ),
+    st.Page(
+        _workspace(analytics_page.render),
+        title="Analytics",
+        icon=":material/insights:",
+        url_path="analytics",
     ),
 ]
 

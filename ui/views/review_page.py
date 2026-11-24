@@ -12,9 +12,13 @@ import streamlit as st
 from ui.api_client import ApiClientError
 from ui.components import (
     api_error,
+    confidence_badge,
     empty_state,
+    evidence_block,
     get_client,
     local_time,
+    metric_row,
+    score_ring,
     section_header,
 )
 
@@ -60,6 +64,95 @@ def _prepare_section() -> None:
             st.rerun()
 
 
+def _answer_completeness(application: dict) -> tuple[int, int, int]:
+    answers = application.get("answers") or []
+    answered = sum(1 for answer in answers if (answer.get("answer") or "").strip())
+    drafted = sum(1 for answer in answers if answer.get("provenance") == "ai_draft")
+    return answered, len(answers), drafted
+
+
+def _consolidated_header(application: dict) -> None:
+    flash = st.session_state.pop("_review_flash", "")
+    if flash:
+        st.success(flash)
+
+    answered, total, drafted = _answer_completeness(application)
+    blocking = application.get("blocking_questions") or []
+
+    st.info(f"**Next: {application.get('next_action') or 'No action recorded.'}**")
+
+    metric_row(
+        [
+            ("Status", application["status"], "state machine"),
+            ("Answers complete", f"{answered}/{total}", "non-empty responses"),
+            ("Needs you", len(blocking), "blocking questions"),
+            ("AI drafts", drafted, "read before using"),
+            (
+                "Employer page",
+                "opened" if application.get("employer_page_opened") else "not opened",
+                "opening is not submitting",
+            ),
+        ]
+    )
+
+    warnings: list[str] = []
+    if not application.get("resume_version_label"):
+        warnings.append("No resume variant was selected, so no tailored resume is attached.")
+    if not (application.get("cover_letter") or "").strip():
+        warnings.append("This application has no cover letter.")
+    if not application.get("job_url"):
+        warnings.append(
+            "The source gave no safe link for this job, so there is no page to open from here."
+        )
+    if drafted:
+        warnings.append(
+            f"{drafted} answer(s) are AI drafts. A sensitive question cannot be approved "
+            "while it is only a draft."
+        )
+    for warning in warnings:
+        st.warning(warning)
+
+
+def _job_and_match_tab(application: dict) -> None:
+    client = get_client()
+    try:
+        job = client.get_job(application["job_id"])
+    except ApiClientError as exc:
+        api_error(exc)
+        return
+
+    match = job.get("match") or {}
+    ring, facts = st.columns([1, 5])
+    with ring:
+        st.markdown(
+            score_ring(match.get("total_score"), match.get("band", ""), size=84),
+            unsafe_allow_html=True,
+        )
+        if match:
+            st.markdown(
+                confidence_badge(match.get("confidence", ""), match.get("evidence_coverage")),
+                unsafe_allow_html=True,
+            )
+    with facts:
+        st.markdown(f"**{job['title']}** — {job['company']}")
+        st.markdown(
+            f"- Location: {job.get('location') or 'not stated'}\n"
+            f"- Work arrangement: `{job['work_arrangement']}`\n"
+            f"- Experience asked: {job.get('experience_raw') or 'not stated'}\n"
+            f"- Posted: "
+            + (local_time(job["posted_at"]) if job.get("posted_at") else "not provided")
+            + f"\n- Discovered: {local_time(job['discovered_at'])}"
+        )
+
+    if match:
+        st.markdown(evidence_block(match), unsafe_allow_html=True)
+    else:
+        st.caption("This job has not been scored, so there is no match evidence to show.")
+
+    with st.expander("Full description (treated as untrusted text)"):
+        st.text(job.get("description") or "No description was provided.")
+
+
 def _render_application(application: dict) -> None:
     client = get_client()
     st.markdown(f"### {application['job_title']} — {application['job_company']}")
@@ -68,6 +161,8 @@ def _render_application(application: dict) -> None:
         f"platform `{application['platform']}` · resume `{application['resume_version_label'] or 'none selected'}`"
     )
 
+    _consolidated_header(application)
+
     blocking = application.get("blocking_questions") or []
     if blocking:
         st.warning(
@@ -75,9 +170,12 @@ def _render_application(application: dict) -> None:
             "Sensitive and legal questions are never drafted for you."
         )
 
-    letter_tab, answers_tab, submit_tab, history_tab = st.tabs(
-        ["Cover letter", "Answers", "Approve and submit", "History"]
+    job_tab, letter_tab, answers_tab, submit_tab, history_tab = st.tabs(
+        ["Job and match", "Cover letter", "Answers", "Approve and submit", "History"]
     )
+
+    with job_tab:
+        _job_and_match_tab(application)
 
     with letter_tab:
         st.caption(
@@ -166,6 +264,21 @@ def _render_application(application: dict) -> None:
             columns[1].link_button(
                 "Open official page", application["job_url"], use_container_width=True
             )
+            if columns[2].button(
+                "I opened the employer's page",
+                key=f"opened{application['id']}",
+                use_container_width=True,
+            ):
+                try:
+                    get_client().record_opened(application["id"])
+                except ApiClientError as exc:
+                    api_error(exc)
+                else:
+                    st.session_state["_review_flash"] = (
+                        "Recorded that you opened the page. This is not a submission — "
+                        "record that separately below once you have actually submitted."
+                    )
+                    st.rerun()
         else:
             columns[1].caption("The source gave no safe link for this job.")
 

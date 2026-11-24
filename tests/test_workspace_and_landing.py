@@ -31,6 +31,7 @@ LANDING = PROJECT_ROOT / "ui" / "landing.py"
 EXPECTED_TITLES: set[str] = {
     "JobOrbit",
     "Overview",
+    "Set up your search",
     "Resume and profile",
     "Job discovery",
     "Job feed",
@@ -45,6 +46,7 @@ EXPECTED_TITLES: set[str] = {
     "Action inbox",
     "Review queue",
     "Application tracker",
+    "Analytics",
     "Settings and sources",
     "Logs and diagnostics",
 }

@@ -5,13 +5,163 @@ professional experience (Ethara AI, May 2026 – present).
 
 Nothing was pushed to git. No submission automation exists or was added.
 
-This file covers four rounds of work, newest first. **Round 4** measures whether adding
+This file covers five rounds of work, newest first. **Round 5** covers the grounded match
+explanation, the guided application workspace, job-search analytics and the preferences
+wizard. **Round 4** measures whether adding
 India-hiring ATS boards fixes the coverage gap Round 3 found. **Round 3** covers confidence
 in the dashboard, cross-source duplication measured at scale, the benchmark expanded to 190
 real listings, and a real application pilot. **Round 2** covers the Ashby and
 SmartRecruiters integration, the five open job feeds and the ranking-quality rules.
 **Round 1** follows unchanged, because its findings about the resume parser and the original
 scoring-honesty defects remain the record of how those were fixed.
+
+---
+
+# Round 5 — explainability, guided workflow and analytics
+
+Rounds 1–4 made the ranking defensible. This round makes it *legible*: a score is only
+useful if the person reading it can check the claim behind it, and a prepared application is
+only useful if the next step is obvious.
+
+## R5.1 Test results (actual)
+
+| Gate | Command | Result |
+|---|---|---|
+| Tests | `.venv/bin/python -m pytest` | **742 collected, exit 0** (was 680; +62) |
+| Lint | `.venv/bin/ruff check app ui tests` | All checks passed |
+| Format | `.venv/bin/ruff format --check app ui tests` | 137 files formatted |
+| Types | `.venv/bin/mypy app` | no issues in 86 source files |
+| Static security | `.venv/bin/bandit -r app ui -ll` | No issues identified, 19,502 lines |
+| Migrations | upgrade / check / downgrade | 5 revisions, 18 tables, mode 600, no drift, single head |
+
+## R5.2 Grounded match explanations
+
+`GET /api/jobs/{id}/explanation` re-expresses an already-computed score as seven sections:
+strong matches, missing or unproven requirements, experience and seniority, location and
+work mode, evidence quality, the candidate's own applicable experience, and why anything was
+held back.
+
+Two rules hold throughout:
+
+- **Nothing in the explanation computes a score.** It reads the stored `job_match` row, so
+  the number on the explanation screen and the number in the feed cannot diverge. The
+  explanation is derived per request rather than persisted, so it can never describe a
+  profile that is no longer in force.
+- **A claim about the listing carries the listing's own words.** `analyse_description` now
+  records the exact line each skill was found on, and the experience bar is reported with
+  the phrase it was read from, so a parsed `5` is never shown without its sentence.
+
+Skill gap is reported in four states rather than two: present in the profile, *related by
+name only* (holding React is not holding React Native, and the screen says so instead of
+counting it), not found, and not mentioned by the listing at all.
+
+Verified live on job 7 of the 7,791-job database: 7 sections, 17 findings, 3 of them
+carrying quotes, and all three source labels (`from the listing`, `from your profile`,
+`from the scoring rules`) rendered.
+
+## R5.3 Guided application workspace
+
+Every application now reports a derived `next_action` — one sentence in the user's words,
+from the status, the blocking questions and whether the employer's page has been opened. A
+test asserts every `ApplicationStatus` produces a non-empty action, so no state is a dead
+end.
+
+`POST /api/applications/{id}/record-opened` records that the user opened the employer's
+page. **It appends an event and deliberately does not change the status**, because opening a
+page is not submitting a form. Three tests pin that: the status is unchanged, `submitted_at`
+stays null, and the route's own source contains no `SUBMITTED`, no `submitted_by` and no
+`TransitionRequest`.
+
+The review screen gained a consolidated header — status, answer completeness, blocking
+count, AI-draft count, employer-page state — plus a Job and match tab showing the score
+ring, confidence and the listing's facts without leaving the queue.
+
+## R5.4 Analytics
+
+`GET /api/metrics/analytics` returns three groups that are never blended: **discovery**
+(what was found, from where, per day), **quality** (bands, confidence, duplicate rate, stale
+versus undated), and **outcomes** (what the user recorded and what employers did).
+
+Three honesty properties, each asserted:
+
+- **Precision is reported as unmeasured.** Measuring it needs human-labelled listings, which
+  no running installation holds, so the field is `null` with the reason stated and a pointer
+  to the versioned benchmark.
+- **The stale rate is measured only over dated listings.** Undated listings are their own
+  bucket; counting them as stale would blame employers for the app's missing data.
+- **An application counts as submitted only because the user recorded it.** A test prepares
+  an application, records the employer page as opened, and asserts `marked_submitted` is
+  still 0.
+
+Measured live: 7,791 jobs, all scored, 16 high / 140 review / 7,635 low, 16 applications
+prepared, 0 submitted, 0 confirmed.
+
+## R5.5 Preferences wizard
+
+Four steps with a progress indicator and a summary before anything is written. Two
+boundaries it keeps, both tested:
+
+- **Nothing is written until the final step.** A test walks the module's syntax tree and
+  asserts only `_review` calls `update_profile` or `complete_onboarding`, so abandoning the
+  wizard half-way leaves the stored profile untouched.
+- **It never edits resume facts.** Name, skills, education and projects are shown read-only
+  with a pointer to the Resume and profile page.
+
+Hard constraints and soft preferences are collected in separate, labelled groups because one
+removes listings with a stated reason and the other only reorders them.
+
+Verified live on an isolated instance: one click per step, review showed *"Nothing has been
+written yet"* and *"India work eligibility required: True"*, saving wrote
+`target_titles=['Backend Developer', 'Python Developer']`,
+`requires_india_work_eligibility=True` and a server-set `onboarding_completed_at` — while
+the five sensitive fields stayed unanswered and the resume facts stayed empty.
+
+## R5.6 Two defects found by using it
+
+**The wizard needed two clicks to advance.** Typing a target title and pressing Next left
+the user on the same step: Streamlit commits a text area on blur, and that rerun swallowed
+the click which caused the blur. Each input step now shares a form with its Next button.
+This is the same defect class the Action inbox hit earlier, so the regression test asserts
+it on the syntax tree — `AppTest.button` lists form submit buttons alongside ordinary ones,
+so a rendered check would pass against the broken version.
+
+**`vars()` raised `TypeError` on the analytics dataclasses.** They use `slots=True`, so they
+have no `__dict__` and the endpoint would have returned 500 on every call. Caught by the
+endpoint test, not by reading the code.
+
+A third, minor: the record-opened confirmation was discarded by `st.rerun()`. Now carried
+across via session state, matching the pattern the inbox and saved-search pages already use.
+
+## R5.7 Browser verification
+
+All **19 pages** at 1440px: 0 Streamlit exceptions, exactly one `<h1>` each, 0 raw-HTML
+leaks. `/resume` reports 8 `<h1>` elements, which remains the documented false positive —
+`innerText` is empty for headings inside a collapsed expander, and those are the resume
+variant's own `# Name` markdown.
+
+Zero horizontal overflow at **390px and 1440px** on `/analytics`, `/setup`, `/job` and
+`/review`.
+
+Exercised, not just screenshotted: the wizard walked end to end and saved; the job detail
+expanders opened and their quotes read; the review tabs switched and the record-opened
+button clicked, with the resulting event confirmed in the database (`employer_page_opened`
+true, status unchanged, `submitted_at` null).
+
+The cold deep-link dialog remains: on the first script run of a cold process, Streamlit
+shows a dismissible *"You have requested page /setup, but no corresponding file was found"*
+modal. `PagesManager.DefaultStrategy` is a process-level class attribute that only flips to
+the `st.navigation` strategy after one script run. Fixing it would mean mutating Streamlit
+private state, so it is documented instead.
+
+## R5.8 What this round does not do
+
+- Analytics has no time-series beyond a 14-day discovery count, because `discovered_at` is
+  the only per-day signal the schema records.
+- The digest and analytics are pull-only. There is no scheduler, asserted by parsing the
+  module's AST, because Streamlit Cloud gives no guarantee a worker keeps running and a
+  scheduler that silently stops is worse than none.
+- Recommendation precision is unmeasured in the product and will stay so until labelled
+  listings exist outside the test fixtures.
 
 ---
 

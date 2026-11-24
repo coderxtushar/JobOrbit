@@ -571,6 +571,42 @@ def coverage_bar(coverage: float | None, confidence: str = "") -> str:
     )
 
 
+#: Compatibility lines shown on every card. Each names the question in the user's words
+#: rather than the scorer's category name, because "freshness 0/100" reads as a fault in
+#: the job whereas "posting date not given" names what actually happened.
+_FIT_LABELS = (("experience", "Experience"), ("location", "Location"), ("freshness", "Freshness"))
+
+_FIT_UNKNOWN = "not assessable"
+
+
+def fit_row(category_scores: dict[str, Any]) -> str:
+    """Experience, location and freshness compatibility as three short verdicts.
+
+    A category the listing left unjudgeable is labelled, never scored: a zero would read
+    as incompatibility when the truth is that the employer said nothing.
+    """
+    if not category_scores:
+        return ""
+    chips: list[str] = []
+    for key, label in _FIT_LABELS:
+        data = category_scores.get(key)
+        if not isinstance(data, dict):
+            continue
+        if not data.get("assessable", True):
+            chips.append(pill(f"{label}: {_FIT_UNKNOWN}", "outline"))
+            continue
+        score = data.get("score")
+        value = float(score) if isinstance(score, int | float) else 0.0
+        tone = "green" if value >= 80 else "amber" if value >= 50 else "slate"
+        chips.append(pill(f"{label}: {value:g}/100", tone))
+    if not chips:
+        return ""
+    return (
+        f'<div class="ja-skillrow"><span class="ja-skilllabel">Fit</span>'
+        f"<span>{''.join(chips)}</span></div>"
+    )
+
+
 def unassessable_fields(category_scores: dict[str, Any]) -> list[str]:
     """Name the categories the listing left unjudgeable, with the stated reason."""
     missing: list[str] = []
