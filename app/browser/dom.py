@@ -30,6 +30,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.browser.labels import resolve_option
+
 if TYPE_CHECKING:  # pragma: no cover - imported for type hints only
     from playwright.sync_api import Locator, Page
 
@@ -388,6 +390,11 @@ def _place_option(wanted: str, options: tuple[str, ...]) -> int:
     index = _best_option(wanted, options)
     if index >= 0:
         return index
+    # The same strict rule used when the options were known in advance: an answer that
+    # starts with exactly one option ("No, but I can relocate" → "No").
+    resolved = resolve_option(wanted, options)
+    if resolved is not None:
+        return options.index(resolved)
     parts = [part.strip().casefold() for part in wanted.split(",") if part.strip()]
     if len(parts) < 2:
         return -1

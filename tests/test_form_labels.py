@@ -261,3 +261,11 @@ def test_a_place_answer_must_match_every_part_never_just_the_city() -> None:
     assert _place_option("Gurgaon, Haryana", offered) == -1
     assert _place_option("Gurugram, Haryana", offered) == 1
     assert _place_option("Gurgaon", offered) == 0  # a single-part answer still matches
+
+
+def test_a_dropdown_picks_the_one_option_an_answer_starts_with() -> None:
+    """Regression: a lazily loaded Yes/No dropdown was sent the whole sentence."""
+    from app.browser.dom import _place_option
+
+    assert _place_option("No but i can relocate to Bangalore", ("Yes", "No")) == 1
+    assert _place_option("I have never worked there", ("Yes", "No")) == -1
