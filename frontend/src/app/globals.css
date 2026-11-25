@@ -345,6 +345,91 @@
   }
 }
 
+/* ---------- Home page effects ----------
+ * Light and dark need different strengths: a 20% violet line reads on white but vanishes on
+ * near-black, so the dark theme raises the rings, adds glow to moving parts and a starfield. */
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.home-fx {
+  --fx-ring: 0.24;
+  --fx-ring-soft: 0.16;
+  --fx-aurora: 0.55;
+  --fx-beam: color-mix(in oklch, var(--violet) 55%, transparent);
+}
+.dark .home-fx {
+  --fx-ring: 0.6;
+  --fx-ring-soft: 0.38;
+  --fx-aurora: 1;
+  --fx-beam: var(--violet);
+}
+.dark .home-fx .fx-glow {
+  filter: drop-shadow(0 0 6px var(--violet))
+    drop-shadow(0 0 14px color-mix(in oklch, var(--violet) 60%, transparent));
+}
+.dark .home-fx .fx-glow-cyan {
+  filter: drop-shadow(0 0 6px var(--cyan))
+    drop-shadow(0 0 14px color-mix(in oklch, var(--cyan) 60%, transparent));
+}
+.dark .home-fx .fx-glow-current {
+  filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 10px currentColor);
+}
+/* A light that runs around a frame's border. */
+.fx-beam {
+  position: relative;
+  isolation: isolate;
+}
+.fx-beam::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg,
+    transparent 250deg,
+    var(--fx-beam) 310deg,
+    var(--cyan) 340deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: beam-spin 6s linear infinite;
+}
+@keyframes beam-spin {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(8%, 6%, 0) scale(1.18);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
