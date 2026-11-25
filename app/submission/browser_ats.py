@@ -417,8 +417,13 @@ class BrowserFormAdapter(SubmissionAdapter):
                 constrained = option_key(form_field.question_key, form_field.options)
                 base = merged.get(form_field.question_key)
                 if constrained in merged:
-                    form_field = dataclasses.replace(form_field, question_key=constrained)
-                elif not _answer_fits(base, form_field.options):
+                    # An answer given for exactly these options. It is still resolved the
+                    # same way below, so "No, but I can relocate" sends "No".
+                    base = merged[constrained]
+                if _answer_fits(base, form_field.options):
+                    if constrained in merged:
+                        form_field = dataclasses.replace(form_field, question_key=constrained)
+                else:
                     resolved = (
                         resolve_option(base.value, form_field.options)
                         if base is not None and form_field.kind is not FieldKind.CHECKBOX

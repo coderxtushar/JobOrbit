@@ -696,3 +696,27 @@ def test_a_form_that_rerenders_when_the_resume_is_attached_is_still_filled(
 
     assert result.state is SubmissionState.SUBMITTED_CONFIRMED, result.reason
     assert len(_received(forms, "GH-UR")) == 1
+
+
+def test_an_answer_saved_for_the_exact_options_is_still_resolved_to_one(tmp_path) -> None:
+    """Regression: "No but i can relocate" saved for Yes/No was refused, not sent as "No"."""
+    from app.browser.labels import option_key
+    from app.submission.browser_ats import _OpenForm
+    from app.submission.forms import FieldKind, FormField, FormSpec
+
+    adapter = _adapter(None, "lever", tmp_path)  # type: ignore[arg-type]
+    job = Job(
+        id=4242, title="Backend Developer", company="acme", url="https://jobs.lever.co/acme/x"
+    )
+    question = FormField(
+        name="f1",
+        label="Are you currently based in Bangalore?",
+        kind=FieldKind.RADIO,
+        required=True,
+        options=("Yes", "No"),
+        question_key="form:based-in-bangalore",
+    )
+    adapter._open[4242] = _OpenForm(None, job.url, FormSpec(fields=(question,)), {})  # type: ignore[arg-type]
+    key = option_key("form:based-in-bangalore", ("Yes", "No"))
+    form = adapter.prepare_fields(job, IDENTITY, {key: _user("No but i can relocate to Bangalore")})
+    assert form.values == {"f1": "No"}, form.blocking
