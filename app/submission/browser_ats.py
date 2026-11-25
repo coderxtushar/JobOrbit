@@ -65,7 +65,7 @@ from app.submission.forms import (
     fill_form,
     validate_document,
 )
-from app.submission.states import FailureCategory, SubmissionState
+from app.submission.states import FailureCategory, SubmissionState, category_for_fill_error
 
 if TYPE_CHECKING:  # pragma: no cover
     from playwright.sync_api import BrowserContext, Page
@@ -655,7 +655,7 @@ class BrowserFormAdapter(SubmissionAdapter):
             category = (
                 FailureCategory.UPLOAD_FAILED
                 if "upload" in text.casefold() or "resume" in text.casefold()
-                else FailureCategory.FORM_CHANGED
+                else category_for_fill_error(text)
             )
             return self._failed(url, reference, f"not submitted: {text}", category, page)
         except Exception as error:  # noqa: BLE001 - nothing has been sent yet

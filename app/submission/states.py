@@ -84,6 +84,24 @@ class FailureCategory:
     EMERGENCY_STOP = "emergency_stop"
     USER_VERIFIED_NOT_SENT = "user_verified_not_sent"
     UNKNOWN_OUTCOME = "unknown_outcome"
+    #: The user's saved answer is not one of the choices the form offers. A data problem
+    #: for the user to fix, not a sign the platform is failing, so it never trips a breaker.
+    ANSWER_NOT_OFFERED = "answer_not_offered"
+
+
+_ANSWER_NOT_OFFERED_MARKERS = (
+    "no choice matching",
+    "none of the suggestions matches",
+    "is not one of the options",
+)
+
+
+def category_for_fill_error(message: str) -> str:
+    """Classify a fill failure: the user's answer not offered, or the form itself changed."""
+    lowered = message.casefold()
+    if any(marker in lowered for marker in _ANSWER_NOT_OFFERED_MARKERS):
+        return FailureCategory.ANSWER_NOT_OFFERED
+    return FailureCategory.FORM_CHANGED
 
 
 #: Failures worth retrying inside the same run, with backoff, because nothing about the
@@ -123,6 +141,7 @@ __all__ = [
     "TRANSIENT_FAILURES",
     "USER_ACTION_FAILURES",
     "FailureCategory",
+    "category_for_fill_error",
     "checkpoint_index",
     "submit_may_have_happened",
     "NEEDS_USER_STATES",

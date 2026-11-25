@@ -108,6 +108,7 @@ from app.submission.states import (
     TRANSIENT_FAILURES,
     USER_ACTION_FAILURES,
     FailureCategory,
+    category_for_fill_error,
     submit_may_have_happened,
 )
 
@@ -917,7 +918,7 @@ class AutoApplyService:
                     # The preview could not fill the form, so a live run would fail at the
                     # same field. Reporting it as ready to submit would be untrue.
                     attempt.state = SubmissionState.FAILED
-                    attempt.failure_category = FailureCategory.FORM_CHANGED
+                    attempt.failure_category = category_for_fill_error(shot)
                     attempt.detail = f"dry run: {shot.removeprefix('dry run ')}"
             attempt.finished_at = utcnow()
             return False

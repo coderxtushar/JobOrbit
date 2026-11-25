@@ -841,3 +841,18 @@ def test_a_dry_run_that_cannot_fill_the_form_is_not_reported_ready(
     assert attempt.failure_category == "form_changed"
     assert "Country" in attempt.detail
     assert configured.state.applications == {}
+
+
+def test_an_answer_the_form_does_not_offer_never_pauses_the_platform(session: Session) -> None:
+    """Regression: three runs stopping on the user's own city answer paused Greenhouse."""
+    from app.submission.states import category_for_fill_error
+
+    message = "Location (City): no choice matching 'Gurgaon, Haryana' was offered"
+    category = category_for_fill_error(message)
+    assert category == "answer_not_offered"
+    assert category_for_fill_error("field Phone changed after the form was read") == "form_changed"
+    for _ in range(5):
+        state = control.record_breaker_outcome(
+            session, "greenhouse", failure_category=category, succeeded=False, threshold=3
+        )
+    assert not state.open and state.consecutive_failures == 0
