@@ -77,6 +77,26 @@ def _require_current_schema() -> None:
         )
 
 
+def _prepare_demo(settings: Settings) -> None:
+    """Seed the fictional demo data and open the per-visitor store, once per process.
+
+    The Streamlit host does this in ``ui/embedded_api.py`` before it starts the API; a
+    standalone API (the hosted Next.js demo) has nobody else to do it. Both paths are safe
+    together: the seed skips what is already there, and an existing store is kept.
+    """
+    from pathlib import Path
+
+    from app.services.demo import seed_demo_data
+    from app.services.demo_sessions import configure_store, get_store
+
+    with session_scope() as session:
+        seed_demo_data(session)
+    if get_store() is None and settings.database_url.startswith("sqlite"):
+        template = Path(settings.database_url.split("///", 1)[-1])
+        if template.exists():
+            configure_store(settings, template)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
@@ -105,6 +125,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 data_dir=settings.data_dir,
                 retention_days=settings.evidence_retention_days,
             )
+        if settings.demo_mode:
+            _prepare_demo(settings)
         scheduler.start(settings)
         logger.info(
             "application started",
