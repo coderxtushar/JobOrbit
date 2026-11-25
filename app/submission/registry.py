@@ -285,9 +285,33 @@ def target_for_url(url: str) -> SubmissionTarget:
     return UNKNOWN_PROVIDER
 
 
+def greenhouse_reference(job: Job) -> tuple[str, str] | None:
+    """``(board, job id)`` when the job was discovered on a Greenhouse board, else ``None``.
+
+    Many companies show their Greenhouse board on their own careers site, so the job's URL
+    is ``company.com/careers?gh_jid=…`` while the application form is still Greenhouse's.
+    The board and id recorded at discovery identify that form exactly.
+    """
+    for reference in getattr(job, "source_references", None) or []:
+        if getattr(reference.source, "value", reference.source) != "greenhouse":
+            continue
+        board = str((reference.source_metadata or {}).get("board") or "").strip()
+        external_id = str(reference.external_id or "").strip()
+        if board and external_id.isdigit():
+            return board, external_id
+    return None
+
+
 def target_for_job(job: Job) -> SubmissionTarget:
-    """Identify the submission provider for a job from its application URL."""
-    return target_for_url(job.url or "")
+    """Identify the submission provider for a job from its application URL.
+
+    A Greenhouse job behind a company's own careers domain is still a Greenhouse
+    application, so it is routed by the board it was discovered on.
+    """
+    target = target_for_url(job.url or "")
+    if target is UNKNOWN_PROVIDER and greenhouse_reference(job) is not None:
+        return GREENHOUSE
+    return target
 
 
 def get_submission_adapter(target: SubmissionTarget | str) -> SubmissionAdapter:

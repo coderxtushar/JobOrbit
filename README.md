@@ -651,11 +651,12 @@ Optional LLM support: `.venv/bin/pip install -e '.[llm]'`.
 These are real and deliberate, not oversights.
 
 0. **Browser submission covers three form providers.** Greenhouse, Lever and Ashby hosted
-   forms are filled and submitted; a Greenhouse job whose listing points at the company's own
-   careers site (not a `greenhouse.io` URL) is not yet routed to its hosted form. All three
+   forms are filled and submitted. A Greenhouse job listed on the company's own careers
+   site is routed to Greenhouse's embed form for the board it was discovered on. All three
    providers run an invisible CAPTCHA; when it escalates to a visible challenge the job
    becomes *needs you*, so some share of applications will always end with you pressing
-   Submit. Salary answers are sent as recorded — there is no LPA/annual/monthly conversion.
+   Submit. A salary asked in a different unit from your saved answer is proposed for your
+   approval, never converted silently.
 1. **No live job search.** The central limitation. No platform in scope offers a jobseeker
    search API, so there is no compliant way to fetch listings automatically. Discovery is
    file import plus opt-in email alerts. The adapter interface is complete, so an

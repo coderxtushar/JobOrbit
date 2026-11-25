@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from app.browser import dom
 from app.browser.labels import (
@@ -117,7 +117,25 @@ def ashby_apply_url(job: Job) -> str:
 
 
 def greenhouse_apply_url(job: Job) -> str:
-    return job.url or ""
+    """The Greenhouse form for the job.
+
+    A greenhouse.io URL is used as it is. A job listed on the company's own careers site
+    opens Greenhouse's official embed form for that board and job, which is the same
+    form the careers page frames, so the page JobOrbit reads is still Greenhouse's.
+    """
+    url = job.url or ""
+    if "greenhouse.io" in (urlsplit(url).hostname or ""):
+        return url
+    from app.submission.registry import greenhouse_reference
+
+    reference = greenhouse_reference(job)
+    if reference is None:
+        return url
+    board, job_id = reference
+    return (
+        "https://job-boards.greenhouse.io/embed/job_app?"
+        f"for={quote(board, safe='')}&token={quote(job_id, safe='')}"
+    )
 
 
 #: Tabs left open for the user after an unclear outcome or a CAPTCHA, by (target, job).

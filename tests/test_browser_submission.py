@@ -626,3 +626,35 @@ def test_a_stop_at_the_last_checkpoint_means_submit_is_never_pressed(
         _apply(adapter, job, _answers("acme"), resume)
     assert _received(forms, "GH-STOP") == []
     adapter.release(job, keep_open=False)
+
+
+def test_a_custom_domain_greenhouse_job_routes_to_the_greenhouse_embed_form() -> None:
+    """A job listed on the company's careers site is still a Greenhouse application."""
+    from app.db.models import JobSourceReference, SourceName
+    from app.submission.browser_ats import greenhouse_apply_url
+    from app.submission.registry import target_for_job
+
+    def job(url: str, board: str | None, external_id: str = "8349259") -> Job:
+        row = Job(title="Software Engineer 3", company="MongoDB", url=url)
+        if board is not None:
+            row.source_references = [
+                JobSourceReference(
+                    source=SourceName.GREENHOUSE,
+                    external_id=external_id,
+                    source_metadata={"board": board},
+                )
+            ]
+        return row
+
+    custom = job("https://www.mongodb.com/careers/job/?gh_jid=8349259", "mongodb")
+    assert target_for_job(custom).key == "greenhouse"
+    assert greenhouse_apply_url(custom) == (
+        "https://job-boards.greenhouse.io/embed/job_app?for=mongodb&token=8349259"
+    )
+
+    hosted = job("https://job-boards.greenhouse.io/groww/jobs/123", "groww", "123")
+    assert greenhouse_apply_url(hosted) == "https://job-boards.greenhouse.io/groww/jobs/123"
+
+    # No Greenhouse discovery behind it, or no usable id: still an unknown form.
+    assert target_for_job(job("https://careers.example.com/role/9", None)).key == "unknown"
+    assert target_for_job(job("https://careers.example.com/role/9", "acme", "abc")).key == "unknown"
