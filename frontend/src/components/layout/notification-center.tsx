@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNavCounts } from "@/hooks/use-nav-counts";
+import { useDemoMode } from "@/hooks/use-demo-mode";
 import { api } from "@/lib/api/endpoints";
 
 interface Notice {
@@ -21,12 +22,15 @@ interface Notice {
 /** Things that need the user, each derived from live data. Empty means nothing is waiting. */
 export function NotificationCenter() {
   const counts = useNavCounts();
+  const demo = useDemoMode();
   const control = useQuery({ queryKey: ["autoapply", "control"], queryFn: api.control, refetchInterval: 30_000 });
   const suggestions = useQuery({
     queryKey: ["email", "suggestions", "pending"],
     queryFn: () => api.suggestions("pending", 100),
     refetchInterval: 120_000,
     retry: false,
+    // Gmail tracking is refused in the public demo; ask only once the API says it is not one.
+    enabled: demo === false,
   });
 
   const notices: Notice[] = [];

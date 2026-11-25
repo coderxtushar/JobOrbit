@@ -18,6 +18,7 @@ import { ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNavCounts } from "@/hooks/use-nav-counts";
+import { useDemoMode } from "@/hooks/use-demo-mode";
 import { api } from "@/lib/api/endpoints";
 import type { Schemas } from "@/lib/api/client";
 import { formatNumber } from "@/lib/formatting";
@@ -43,6 +44,7 @@ const TONE: Record<Action["tone"], string> = {
 /** Everything that is waiting on the user, from live data, most urgent first. */
 export function ActionCenter({ analytics }: { analytics?: Schemas["JobSearchAnalyticsRead"] }) {
   const counts = useNavCounts();
+  const demo = useDemoMode();
   const control = useQuery({ queryKey: ["autoapply", "control"], queryFn: api.control });
   const failed = useQuery({
     queryKey: ["applications", "count", "FAILED"],
@@ -52,6 +54,7 @@ export function ActionCenter({ analytics }: { analytics?: Schemas["JobSearchAnal
     queryKey: ["email", "suggestions", "pending"],
     queryFn: () => api.suggestions("pending", 100),
     retry: false,
+    enabled: demo === false,
   });
 
   const actions: Action[] = [];

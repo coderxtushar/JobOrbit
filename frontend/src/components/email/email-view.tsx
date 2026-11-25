@@ -7,6 +7,7 @@ import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { ErrorState } from "@/components/shared/query-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useHealth } from "@/hooks/use-health";
 import { api } from "@/lib/api/endpoints";
 import { formatNumber } from "@/lib/formatting";
 
@@ -38,16 +39,50 @@ const GUARANTEES = [
   },
 ];
 
+/** The public demo has no mailbox to read: say so instead of showing refused requests. */
+function EmailDemoNotice() {
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Responses"
+        title="Email tracking"
+        description="Read replies to your applications from your own Gmail, or paste one in. Each is classified, matched to an application and turned into a suggestion that you decide on."
+      />
+      <div className="orbit-card flex flex-col items-start gap-3 p-6">
+        <span className="grid size-10 place-items-center rounded-xl bg-violet-soft text-violet ring-1 ring-inset ring-violet/20">
+          <ShieldCheck className="size-5" />
+        </span>
+        <p className="text-base font-medium text-text-1">Not available in the public demo</p>
+        <p className="max-w-2xl text-sm leading-relaxed text-text-2">
+          Email tracking reads a personal mailbox, read-only. A shared demo has no sign-in, so connecting one here would
+          expose it to every visitor. Run JobOrbit on your own machine to connect your Gmail; replies then arrive as
+          status suggestions you accept or dismiss.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function EmailView() {
-  const status = useQuery({ queryKey: ["email", "status"], queryFn: api.emailStatus });
+  const health = useHealth();
+  const demo = health.data?.demo_mode;
+  // Until the API says whether this is the demo, render nothing that would call Gmail
+  // endpoints; if the API cannot be reached, the live view shows its own error states.
+  const live = demo === false || health.isError;
+  const status = useQuery({ queryKey: ["email", "status"], queryFn: api.emailStatus, enabled: live });
   const suggestions = useQuery({
     queryKey: ["email", "suggestions", "pending"],
     queryFn: () => api.suggestions("pending", 100),
+    enabled: live,
   });
   const review = useQuery({
     queryKey: ["email", "messages", "needs_review"],
     queryFn: () => api.emailMessages({ match_state: "needs_review", limit: 100 }),
+    enabled: live,
   });
+
+  if (demo) return <EmailDemoNotice />;
+  if (!live) return <Skeleton className="h-96 w-full rounded-xl" />;
 
   const pendingCount = suggestions.data?.length ?? status.data?.pending_suggestions;
   const reviewCount = review.data?.total ?? status.data?.needs_review;
