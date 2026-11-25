@@ -29,6 +29,33 @@ type Resolve = Schemas["ResolveResponse"];
  * One outstanding question. The reason it was flagged is not part of the inbox response, so
  * it is read from the first waiting application only when the user opens "Why".
  */
+interface Choices {
+  /** The question without the "(choose one of: …)" suffix the backend appends. */
+  prompt: string;
+  options: string[];
+  multiple: boolean;
+  /** The form offers more options than the question text lists (e.g. a country list). */
+  truncated: boolean;
+}
+
+/**
+ * The backend phrases a choice question as "Label (choose one of: A / B / C)" or
+ * "(choose any of, separated by ;: …)", listing up to 15 options. Reading them back lets
+ * the answer be picked rather than typed, so it always matches an option exactly.
+ */
+function parseChoices(question: string): Choices | null {
+  const match = question.match(
+    /^([\s\S]*?)\s*\(choose (one|any) of(?:, separated by ;)?: ([\s\S]*)\)\s*(?:—[\s\S]*)?$/,
+  );
+  if (!match) return null;
+  let list = match[3];
+  const more = /\s*\/\s*… and \d+ more$/.exec(list);
+  if (more) list = list.slice(0, more.index);
+  const options = list.split(" / ").map((item) => item.trim()).filter(Boolean);
+  if (!options.length) return null;
+  return { prompt: match[1].trim(), options, multiple: match[2] === "any", truncated: Boolean(more) };
+}
+
 export function InboxEntryCard({
   entry,
   onResolved,
@@ -79,13 +106,29 @@ export function InboxEntryCard({
   });
 
   const trimmed = answer.trim();
+  const choices = parseChoices(entry.question);
+  const pickable = choices !== null && !choices.truncated;
+  const picked = choices?.multiple
+    ? answer.split(";").map((item) => item.trim()).filter(Boolean)
+    : [trimmed];
+  const toggle = (option: string) => {
+    if (error) setError(null);
+    if (!choices?.multiple) {
+      setAnswer(option);
+      return;
+    }
+    const next = picked.includes(option) ? picked.filter((item) => item !== option) : [...picked, option];
+    setAnswer(next.join("; "));
+  };
 
   return (
     <Surface className="group/entry overflow-hidden p-0 transition-[border-color,box-shadow] duration-200 focus-within:border-line-strong hover:border-line-strong">
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-1.5">
-            <p className="font-heading text-[15px] leading-snug font-medium text-text-1">{entry.question}</p>
+            <p className="font-heading text-[15px] leading-snug font-medium text-text-1">
+              {choices?.prompt || entry.question}
+            </p>
             <p className="truncate font-mono text-[11px] text-text-3">{entry.question_key}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
@@ -174,10 +217,50 @@ export function InboxEntryCard({
           save.mutate();
         }}
       >
+        {pickable ? (
+          <div className="space-y-1.5">
+            <p className="text-xs text-text-2">
+              {choices.multiple ? "Pick every option that applies" : "Pick the option the employer offers"}
+            </p>
+            <div role={choices.multiple ? "group" : "radiogroup"} aria-label="Options" className="flex flex-wrap gap-1.5">
+              {choices.options.map((option) => {
+                const on = picked.includes(option);
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role={choices.multiple ? "checkbox" : "radio"}
+                    aria-checked={on}
+                    onClick={() => toggle(option)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-left text-[13px] ring-1 ring-inset transition-colors",
+                      on
+                        ? "bg-violet-soft text-violet ring-violet/40"
+                        : "bg-surface-1 text-text-2 ring-line hover:text-text-1 hover:ring-line-strong",
+                    )}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+            {error ? (
+              <p role="alert" className="text-xs text-danger">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        ) : (
         <div className="space-y-1.5">
           <Label htmlFor={`${fieldId}-answer`} className="text-xs text-text-2">
             Your answer
           </Label>
+          {choices?.truncated ? (
+            <p className="text-[11px] text-text-3">
+              The form offers more options than listed here. Type one exactly as the employer
+              writes it, for example “{choices.options[0]}”.
+            </p>
+          ) : null}
           <Textarea
             id={`${fieldId}-answer`}
             value={answer}
@@ -203,6 +286,7 @@ export function InboxEntryCard({
             </p>
           ) : null}
         </div>
+        )}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Switch id={`${fieldId}-apply`} checked={applyToOpen} onCheckedChange={setApplyToOpen} />
