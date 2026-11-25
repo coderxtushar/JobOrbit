@@ -9,14 +9,19 @@
  * - The backend needs no CORS configuration: it is reached server-to-server.
  *
  * Only the backend's own /api/* and /health paths are forwarded, to the one configured
- * origin, so this cannot be used to make requests anywhere else. Cookies are not forwarded.
+ * origin, so this cannot be used to make requests anywhere else. Cookies are not forwarded;
+ * in the hosted demo, the visitor's demo key is read from its cookie and sent as a header.
  */
 import type { NextRequest } from "next/server";
+
+import { DEMO_COOKIE, DEMO_ENABLED, isDemoKey } from "@/lib/demo/session";
 
 const BACKEND = (process.env.JOBORBIT_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 const TOKEN = process.env.JOBORBIT_API_TOKEN ?? process.env.JA_API_TOKEN ?? "";
 
-const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "x-demo-session"];
+// The demo key comes from this site's own httpOnly cookie, never from a header the browser
+// could set, so a page script cannot point a request at another visitor's copy.
+const FORWARDED_REQUEST_HEADERS = ["content-type", "accept"];
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "content-disposition",
@@ -43,6 +48,10 @@ async function forward(
     if (value) headers.set(name, value);
   }
   if (TOKEN) headers.set("authorization", `Bearer ${TOKEN}`);
+  if (DEMO_ENABLED) {
+    const key = request.cookies.get(DEMO_COOKIE)?.value;
+    if (isDemoKey(key)) headers.set("x-demo-session", key);
+  }
 
   const hasBody = !["GET", "HEAD"].includes(request.method);
   let upstream: Response;
