@@ -909,10 +909,16 @@ class AutoApplyService:
                 shot = preview_fill(
                     job, form, attachment, label=f"run{attempt.autoapply_run_id}-job{job.id}"
                 )
-                if shot:
+                if shot.endswith(".png"):
                     attempt.detail += f". The form was filled without submitting: {shot}"
-                    if shot.endswith(".png"):
-                        attempt.evidence_path = shot
+                    attempt.evidence_path = shot
+                    attempt.checkpoint = "form_filled"
+                elif shot:
+                    # The preview could not fill the form, so a live run would fail at the
+                    # same field. Reporting it as ready to submit would be untrue.
+                    attempt.state = SubmissionState.FAILED
+                    attempt.failure_category = FailureCategory.FORM_CHANGED
+                    attempt.detail = f"dry run: {shot.removeprefix('dry run ')}"
             attempt.finished_at = utcnow()
             return False
 

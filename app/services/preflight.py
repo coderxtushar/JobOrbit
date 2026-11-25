@@ -65,9 +65,11 @@ _HANDLED_STATUSES: dict[ApplicationStatus, str] = {
     ApplicationStatus.SUBMITTED: "you have already applied",
     ApplicationStatus.CONFIRMED: "you have already applied (confirmed)",
     ApplicationStatus.SUBMISSION_UNKNOWN: "an earlier submission's outcome is still unknown",
-    ApplicationStatus.APPROVED: "approved for you to submit yourself",
     ApplicationStatus.SKIPPED: "you skipped this job",
 }
+# APPROVED is deliberately absent: approving an application in the review queue is the
+# user vouching for it, so it stays eligible for auto-apply. Duplicate protection does not
+# depend on this list; it comes from dispatched attempts and the pre-dispatch re-check.
 
 #: Attempt states proving the employer may already hold an application.
 _DISPATCHED_STATES: frozenset[SubmissionState] = frozenset(

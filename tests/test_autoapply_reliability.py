@@ -795,3 +795,49 @@ def test_auto_apply_never_sends_a_junior_to_a_senior_title(
     assert by_id[graded.id].status == "blocked", "a numbered grade 3 is above a junior"
     assert by_id[next_step.id].status == "ready", "one grade up is allowed"
     assert by_id[peer.id].status == "ready", "a title without a level must not be blocked"
+
+
+def test_an_application_approved_in_review_stays_eligible_for_auto_apply(
+    configured: TestApplicationServer, session: Session, verified_profile, profile
+) -> None:
+    """Approving in the review queue vouches for the application; it must not drop out."""
+    job = _job(session, configured, "APR-1", external_id="APR-1")
+    _score(session, job, profile)
+    session.commit()
+    first = _run(session, profile, AutoApplyTargets(**{**LIVE, "dry_run": True}))
+    application = session.get(Application, first.attempts[0].application_id)
+    application.status = ApplicationStatus.APPROVED
+    application.user_approved = True
+    session.commit()
+
+    plan = run_preflight(session, profile, AutoApplyTargets(**LIVE))
+    assert job.id in plan.queue_job_ids
+    run = _run(session, profile, AutoApplyTargets(**LIVE))
+    assert run.confirmed_count == 1
+    assert session.get(Application, application.id).status is ApplicationStatus.CONFIRMED
+
+
+def test_a_dry_run_that_cannot_fill_the_form_is_not_reported_ready(
+    configured: TestApplicationServer,
+    session: Session,
+    verified_profile,
+    profile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: a preview that stopped mid-form still read 'ready to submit'."""
+    job = _job(session, configured, "PREV-1", external_id="PREV-1")
+    _score(session, job, profile)
+    session.commit()
+    monkeypatch.setattr(
+        LocalTestSubmissionAdapter,
+        "preview_fill",
+        lambda self, *args, **kwargs: "dry run stopped while filling: Country: not shown",
+        raising=False,
+    )
+    _run(session, profile, AutoApplyTargets(**{**LIVE, "dry_run": True}))
+
+    attempt = _attempt(session, job)
+    assert attempt.state is SubmissionState.FAILED
+    assert attempt.failure_category == "form_changed"
+    assert "Country" in attempt.detail
+    assert configured.state.applications == {}
