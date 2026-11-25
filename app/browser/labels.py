@@ -74,7 +74,7 @@ _ABOUT_ME: tuple[tuple[str, str], ...] = (
     (r"\b(current|present)\s*(title|designation|role|position)\b", "current_title"),
     (r"\bcountry\b", "country"),
     (
-        r"\b(current\s*)?(location|city)\b|\bwhere\s+are\s+you\s+(based|located)\b",
+        r"\b(current\s*)?(location|city)\b|\bwhere\s+are\s+you\s+(currently\s+|now\s+)?(based|located)\b",
         "current_location",
     ),
     (r"\bhow\s+did\s+you\s+(hear|find|learn)\b|\breferral\s*source\b|\bsource\b", "heard_about_us"),
@@ -88,10 +88,21 @@ _EEO: tuple[tuple[str, str], ...] = (
     (r"\bdisab\w*\b", "disability"),
 )
 
+_YES_NO_QUESTION = re.compile(
+    r"^\s*(are|do|does|did|have|has|had|will|would|can|could|is|was|were|should)\b",
+    re.IGNORECASE,
+)
+
 _CONSENT = re.compile(
     r"\b(i\s+(agree|consent|confirm|acknowledge|certify|understand|accept)|consent|"
     r"agree\s+to|terms\s*(and|&)\s*conditions|privacy\s*(policy|notice)|declar\w*|"
-    r"background\s*(check|verification)|bgv|attest)\b",
+    r"background\s*(check|verification)|bgv|attest|"
+    # Signing something: "indicate your agreement by typing your full name", an NDA, an
+    # e-signature. A name typed here is a signature, so it is never filled from the
+    # profile; only the user's own answer to that exact text is used.
+    r"(indicate|confirm|signal)\s+your\s+(agreement|acceptance|consent)|"
+    r"nda|non[-\s]?disclosure|(electronic|digital|e[-\s]?)\s*signature|"
+    r"sign\s+(here|below|this))\b",
     re.IGNORECASE,
 )
 
@@ -195,9 +206,13 @@ def classify_label(label: str, *, company: str = "", long_answer: bool = False) 
         if re.search(pattern, lowered):
             return LabelClass(key=key, identity=True)
 
-    for pattern, key in _ABOUT_ME:
-        if re.search(pattern, lowered):
-            return LabelClass(key=key)
+    # "Are you subject to any agreements with your current employer?" mentions the current
+    # employer but asks yes or no about something else. The about-me keys name a fact to
+    # supply, so a yes/no question never maps to them.
+    if not _YES_NO_QUESTION.match(lowered):
+        for pattern, key in _ABOUT_ME:
+            if re.search(pattern, lowered):
+                return LabelClass(key=key)
 
     if long_answer:
         scope = slugify(company, limit=24) if company else "any"
@@ -274,10 +289,16 @@ def split_name(full_name: str) -> tuple[str, str]:
 def resolve_option(value: str, options: tuple[str, ...]) -> str | None:
     """The offered option a stored answer refers to, or ``None`` if it is not clear.
 
-    Exact (case-insensitive) first. Otherwise the answer must be the leading words of
-    exactly **one** option: "India" picks "India +91" from a phone-country list, but "Yes"
-    picks nothing from "Yes, full time" / "Yes, part time". Never fuzzier than that,
-    because the chosen option is what the employer reads.
+    Exact (case-insensitive) first. Otherwise one of two prefix rules, each accepted only
+    when exactly **one** option qualifies:
+
+    * the answer is the leading words of an option: "India" picks "India +91" from a
+      phone-country list, but "Yes" picks nothing from "Yes, full time" / "Yes, part time";
+    * an option is the leading word(s) of the answer: "No, but I can relocate" picks "No"
+      from Yes / No. The user wrote the option and then explained it.
+
+    Never fuzzier than that — no synonyms, no reading of negations — because the chosen
+    option is what the employer reads.
     """
     wanted = value.strip().casefold()
     if not wanted:
@@ -287,7 +308,17 @@ def resolve_option(value: str, options: tuple[str, ...]) -> str | None:
             return option
     pattern = re.compile(rf"^{re.escape(wanted)}(?![a-z0-9])")
     matches = [option for option in options if pattern.match(option.strip().casefold())]
-    return matches[0] if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        return None
+    leading = [
+        option
+        for option in options
+        if option.strip()
+        and re.match(rf"^{re.escape(option.strip().casefold())}(?![a-z0-9])", wanted)
+    ]
+    return leading[0] if len(leading) == 1 else None
 
 
 __all__ = [

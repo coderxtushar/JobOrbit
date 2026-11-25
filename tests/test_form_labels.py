@@ -186,3 +186,78 @@ def test_a_stored_answer_picks_an_option_only_when_it_names_exactly_one() -> Non
 
 def test_most_recent_employer_is_the_current_company() -> None:
     assert classify_label("Please list your most recent Employer here.").key == "current_company"
+
+
+@pytest.mark.parametrize(
+    ("answer", "options", "expected"),
+    [
+        ("No but i can relocate to Bangalore", ("Yes", "No"), "No"),
+        ("Yes, happy to", ("Yes", "No"), "Yes"),
+        ("Yes", ("No", "Yes, Netherlands visa", "Yes, Ireland visa"), None),
+        ("I have never been employed there", ("Yes", "No"), None),
+        ("Not sure", ("No", "Not applicable"), None),
+        ("Nope", ("No", "Yes"), None),
+    ],
+)
+def test_an_answer_that_starts_with_exactly_one_option_selects_it(
+    answer, options, expected
+) -> None:
+    """The user wrote the option and then explained it; anything less clear is asked again."""
+    from app.browser.labels import resolve_option
+
+    assert resolve_option(answer, options) == expected
+
+
+@pytest.mark.parametrize(
+    ("option", "shown", "expected"),
+    [
+        ("India +91", "  +91", True),  # phone-country pickers show only the code
+        ("United States +1", " +44", False),
+        ("India +91", "+911", False),
+        ("No", "Unknown", False),
+        ("No", "No ✕", True),
+        ("Yes, full time", "Yes, full time", True),
+    ],
+)
+def test_a_picker_choice_is_confirmed_only_by_a_whole_word_match(option, shown, expected) -> None:
+    from app.browser.dom import _choice_is_shown
+
+    assert _choice_is_shown(option, shown) is expected
+
+
+@pytest.mark.parametrize(
+    ("label", "expected_prefix"),
+    [
+        # Signing something is consent: a typed name here is a signature.
+        (
+            "Please Review the NDA and indicate your agreement by typing your full name below",
+            "consent:",
+        ),
+        ("Type your full name as your electronic signature", "consent:"),
+        ("Sign below to confirm the information is accurate", "consent:"),
+        ("Full name", "full_name"),
+        # A yes/no question that mentions the employer is not asking for its name.
+        (
+            "Are you subject to any employment agreements and/or post-employment restrictions "
+            "with your current employer?",
+            "form:",
+        ),
+        ("What is the name of your current employer?", "current_company"),
+        ("Where are you currently located?", "current_location"),
+        ("Are you currently based in Bangalore?", "form:"),
+    ],
+)
+def test_signatures_are_consent_and_yes_no_questions_are_not_profile_facts(
+    label, expected_prefix
+) -> None:
+    assert classify_label(label).key.startswith(expected_prefix)
+
+
+def test_a_place_answer_must_match_every_part_never_just_the_city() -> None:
+    """Regression: "Gurgaon, Haryana" filled as "Gurgaon, Bihar, India"."""
+    from app.browser.dom import _place_option
+
+    offered = ("Gurgaon, Bihar, India", "Gurugram, Haryana, India", "Gurgaon Road, Delhi")
+    assert _place_option("Gurgaon, Haryana", offered) == -1
+    assert _place_option("Gurugram, Haryana", offered) == 1
+    assert _place_option("Gurgaon", offered) == 0  # a single-part answer still matches
