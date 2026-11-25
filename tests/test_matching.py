@@ -285,6 +285,27 @@ def test_already_applied_jobs_are_filtered(session: Session, profile: CandidateP
     assert any("already applied" in reason for reason in outcome.reasons)
 
 
+@pytest.mark.parametrize("title", ["z", "-", "123"])
+def test_a_listing_with_no_real_title_is_filtered(
+    session: Session, profile: CandidateProfile, title: str
+) -> None:
+    job = persist_job(session, make_record(title=title, external_id=f"T-{title!r}"))
+    outcome = evaluate(job, profile)
+
+    assert not outcome.eligible
+    assert any("no real job title" in reason for reason in outcome.reasons)
+
+
+@pytest.mark.parametrize("title", ["QA", "SDE II", "Backend Engineer", "Développeur"])
+def test_short_but_real_titles_are_not_filtered_as_placeholders(
+    session: Session, profile: CandidateProfile, title: str
+) -> None:
+    job = persist_job(session, make_record(title=title, external_id=f"R-{title}"))
+    outcome = evaluate(job, profile)
+
+    assert not any("no real job title" in reason for reason in outcome.reasons)
+
+
 def test_expired_jobs_are_filtered(session: Session, profile: CandidateProfile) -> None:
     job = persist_job(session, make_record(external_id="X-4"))
     job.status = JobStatus.EXPIRED

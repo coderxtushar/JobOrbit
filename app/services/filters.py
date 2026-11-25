@@ -14,6 +14,7 @@ Two design rules follow from the requirement not to reject promising roles over 
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -33,6 +34,10 @@ SENIORITY_BY_LEVEL: dict[str, int] = {
     "senior": 3,
     "lead": 4,
 }
+
+#: A word of two or more letters. Every real job title has one ("QA", "SDE", "Engineer");
+#: feed spam and placeholder rows ("z", "-", "123") do not.
+_TITLE_WORD = re.compile(r"[^\W\d_]{2,}")
 
 SENIORITY_TOLERANCE = 2
 EXPERIENCE_TOLERANCE_YEARS = 2.0
@@ -172,6 +177,11 @@ def evaluate(
 
     if context.already_applied:
         outcome.reject("you have already applied to this job")
+
+    if not _TITLE_WORD.search(job.title or ""):
+        # Positive evidence, not a guess: there is no title to match against, so any score
+        # would only reflect the absence of content to fail on.
+        outcome.reject(f"the listing has no real job title ('{(job.title or '').strip()}')")
 
     if job.status is JobStatus.EXPIRED or job.closed_at is not None:
         outcome.reject("the listing is closed or expired")
