@@ -1,0 +1,356 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * JobOrbit design tokens.
+ *
+ * Every colour, surface, shadow, radius, duration and layout size in the app is one of the
+ * variables below. Components use the Tailwind names mapped in @theme (bg-surface-2,
+ * text-violet, shadow-glow...), never raw values, so the two themes stay consistent and a
+ * palette change is made here once.
+ *
+ * Dark is the primary theme (`.dark` on <html>, applied before paint by the inline script in app/layout.tsx). Light is a faithful
+ * counterpart, not an inversion: same hues, re-balanced for contrast on white.
+ */
+
+@theme inline {
+  /* shadcn semantic colours */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Orbit palette */
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --color-indigo: var(--indigo);
+  --color-cyan: var(--cyan);
+  --color-cyan-soft: var(--cyan-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  /* Typography */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sora);
+
+  /* Radius */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Shadows */
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-glow: var(--shadow-glow);
+  --shadow-glow-cyan: var(--shadow-glow-cyan);
+
+  /* Motion */
+  --ease-orbit: var(--ease-orbit);
+  --ease-out-soft: var(--ease-out-soft);
+  --animate-orbit-spin: orbit-spin 60s linear infinite;
+  --animate-orbit-spin-reverse: orbit-spin 90s linear infinite reverse;
+  --animate-pulse-soft: pulse-soft 3.2s var(--ease-out-soft) infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+}
+
+:root {
+  /* ---------- Light theme ---------- */
+  --surface-0: oklch(0.985 0.004 275);
+  --surface-1: oklch(1 0 0);
+  --surface-2: oklch(0.97 0.006 275);
+  --surface-3: oklch(0.94 0.01 275);
+  --line: oklch(0.91 0.01 275);
+  --line-strong: oklch(0.84 0.015 275);
+  --text-1: oklch(0.2 0.02 275);
+  --text-2: oklch(0.45 0.02 270);
+  --text-3: oklch(0.6 0.018 270);
+
+  --violet: oklch(0.55 0.24 292);
+  --violet-soft: oklch(0.55 0.24 292 / 10%);
+  --indigo: oklch(0.5 0.2 270);
+  --cyan: oklch(0.6 0.13 215);
+  --cyan-soft: oklch(0.6 0.13 215 / 12%);
+  --success: oklch(0.58 0.14 160);
+  --success-soft: oklch(0.58 0.14 160 / 12%);
+  --warning: oklch(0.66 0.15 70);
+  --warning-soft: oklch(0.7 0.15 70 / 14%);
+  --danger: oklch(0.58 0.19 25);
+  --danger-soft: oklch(0.58 0.19 25 / 11%);
+
+  --background: var(--surface-0);
+  --foreground: var(--text-1);
+  --card: var(--surface-1);
+  --card-foreground: var(--text-1);
+  --popover: var(--surface-1);
+  --popover-foreground: var(--text-1);
+  --primary: var(--violet);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-2);
+  --accent: var(--surface-3);
+  --accent-foreground: var(--text-1);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--violet);
+  --chart-1: var(--violet);
+  --chart-2: var(--cyan);
+  --chart-3: var(--indigo);
+  --chart-4: var(--success);
+  --chart-5: var(--warning);
+  --sidebar: oklch(0.975 0.006 275);
+  --sidebar-foreground: var(--text-2);
+  --sidebar-primary: var(--violet);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: var(--surface-3);
+  --sidebar-accent-foreground: var(--text-1);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--violet);
+
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 80%) inset, 0 1px 2px oklch(0.2 0.02 275 / 6%),
+    0 8px 24px -12px oklch(0.2 0.02 275 / 12%);
+  --shadow-raised: 0 12px 40px -12px oklch(0.3 0.05 275 / 22%);
+  --shadow-glow: 0 0 0 1px oklch(0.55 0.24 292 / 25%), 0 8px 30px -8px oklch(0.55 0.24 292 / 35%);
+  --shadow-glow-cyan: 0 0 0 1px oklch(0.6 0.13 215 / 25%), 0 8px 30px -8px oklch(0.6 0.13 215 / 30%);
+  --ambient: radial-gradient(60rem 30rem at 10% -10%, oklch(0.55 0.24 292 / 8%), transparent 60%),
+    radial-gradient(40rem 24rem at 100% 0%, oklch(0.6 0.13 215 / 7%), transparent 60%);
+
+  /* ---------- Shared, theme-independent ---------- */
+  --radius: 0.75rem;
+  --space-page-x: 1.5rem;
+  --space-page-y: 1.75rem;
+  --space-section: 2rem;
+  --sidebar-width: 15.5rem;
+  --sidebar-width-collapsed: 4.25rem;
+  --topbar-height: 3.5rem;
+  --content-max: 88rem;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 360ms;
+  --ease-orbit: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.dark {
+  /* ---------- Dark theme (primary) ---------- */
+  --surface-0: oklch(0.145 0.018 275);
+  --surface-1: oklch(0.18 0.02 275);
+  --surface-2: oklch(0.215 0.022 275);
+  --surface-3: oklch(0.26 0.024 275);
+  --line: oklch(1 0 0 / 7%);
+  --line-strong: oklch(1 0 0 / 13%);
+  --text-1: oklch(0.96 0.006 275);
+  --text-2: oklch(0.74 0.02 270);
+  --text-3: oklch(0.58 0.022 270);
+
+  --violet: oklch(0.7 0.2 293);
+  --violet-soft: oklch(0.7 0.2 293 / 14%);
+  --indigo: oklch(0.62 0.19 272);
+  --cyan: oklch(0.8 0.12 210);
+  --cyan-soft: oklch(0.8 0.12 210 / 12%);
+  --success: oklch(0.76 0.15 162);
+  --success-soft: oklch(0.76 0.15 162 / 13%);
+  --warning: oklch(0.82 0.14 78);
+  --warning-soft: oklch(0.82 0.14 78 / 13%);
+  --danger: oklch(0.7 0.17 22);
+  --danger-soft: oklch(0.7 0.17 22 / 13%);
+
+  --background: var(--surface-0);
+  --foreground: var(--text-1);
+  --card: var(--surface-1);
+  --card-foreground: var(--text-1);
+  --popover: oklch(0.2 0.022 275);
+  --popover-foreground: var(--text-1);
+  --primary: var(--violet);
+  --primary-foreground: oklch(0.16 0.03 290);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-2);
+  --accent: var(--surface-3);
+  --accent-foreground: var(--text-1);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--violet);
+  --chart-1: var(--violet);
+  --chart-2: var(--cyan);
+  --chart-3: var(--indigo);
+  --chart-4: var(--success);
+  --chart-5: var(--warning);
+  --sidebar: oklch(0.155 0.02 275);
+  --sidebar-foreground: var(--text-2);
+  --sidebar-primary: var(--violet);
+  --sidebar-primary-foreground: oklch(0.16 0.03 290);
+  --sidebar-accent: oklch(1 0 0 / 5%);
+  --sidebar-accent-foreground: var(--text-1);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--violet);
+
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 4%) inset, 0 1px 2px oklch(0 0 0 / 40%),
+    0 12px 32px -16px oklch(0 0 0 / 60%);
+  --shadow-raised: 0 24px 60px -20px oklch(0 0 0 / 70%);
+  --shadow-glow: 0 0 0 1px oklch(0.7 0.2 293 / 35%), 0 10px 40px -10px oklch(0.7 0.2 293 / 45%);
+  --shadow-glow-cyan: 0 0 0 1px oklch(0.8 0.12 210 / 30%), 0 10px 40px -10px oklch(0.8 0.12 210 / 35%);
+  --ambient: radial-gradient(60rem 30rem at 10% -10%, oklch(0.7 0.2 293 / 9%), transparent 60%),
+    radial-gradient(40rem 24rem at 100% 0%, oklch(0.8 0.12 210 / 6%), transparent 60%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: var(--violet-soft);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* Layout safety nets for narrow screens. A grid item's minimum width defaults to its
+     content, so one long word or truncated row would widen the whole page; decorative
+     glows positioned past a card's edge must not create a sideways scroll; and a tab bar
+     with many tabs scrolls rather than stretching the layout. `clip` (not `hidden`) keeps
+     position: sticky working inside main. */
+  .grid > * {
+    min-width: 0;
+  }
+  main {
+    overflow-x: clip;
+  }
+  [data-slot="tabs-list"] {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+}
+
+@layer components {
+  /* A content surface: the card used across every page. */
+  .orbit-card {
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
+  }
+  /* Translucent panel for overlays and the hero; blur only where something sits beneath. */
+  .orbit-glass {
+    background: color-mix(in oklch, var(--surface-1) 72%, transparent);
+    border: 1px solid var(--line-strong);
+    backdrop-filter: blur(14px) saturate(140%);
+  }
+  .orbit-ambient {
+    background-image: var(--ambient);
+  }
+  .orbit-gradient-text {
+    background: linear-gradient(100deg, var(--text-1) 20%, var(--violet) 60%, var(--cyan));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .orbit-hairline {
+    background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+    height: 1px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
