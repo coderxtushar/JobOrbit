@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import secrets
 import shutil
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
@@ -98,7 +99,7 @@ class DemoSessionStore:
         except OSError:  # pragma: no cover - platform dependent
             pass
         path = self._directory / f"{_safe_filename(key)}.db"
-        shutil.copyfile(self._template_path, path)
+        _copy_database(self._template_path, path)
         try:
             path.chmod(0o600)
         except OSError:  # pragma: no cover - platform dependent
@@ -166,6 +167,25 @@ def _url_for(path: Path) -> str:
 
 _store: DemoSessionStore | None = None
 _store_lock = threading.Lock()
+
+
+def _copy_database(source: Path, target: Path) -> None:
+    """Copy a SQLite database including what is still in its write-ahead log.
+
+    A plain file copy reads only the main file. The template runs in WAL mode, so rows the
+    seed just wrote can still sit in ``-wal`` while the API holds the template open, and a
+    file copy would hand the visitor an empty feed. SQLite's backup API reads through the
+    log, so the copy is exactly what a reader of the template sees.
+    """
+    reader = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    try:
+        writer = sqlite3.connect(target)
+        try:
+            reader.backup(writer)
+        finally:
+            writer.close()
+    finally:
+        reader.close()
 
 
 def configure_store(settings: Settings, template_path: Path) -> DemoSessionStore:
