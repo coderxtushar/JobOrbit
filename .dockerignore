@@ -1,0 +1,19 @@
+# Only the API's code goes into the image: no data, secrets, frontend or local tooling.
+.git
+.venv
+venv
+var
+.env
+.env.*
+*.db
+*.pdf
+frontend
+extension
+ui
+docs
+tests
+context.md
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache

@@ -1,0 +1,19 @@
+# Render Blueprint: the JobOrbit API as a free web service running the public demo.
+# New > Blueprint on render.com, pick this repository, and Render reads this file.
+services:
+  - type: web
+    name: joborbit-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Fictional candidate and sample jobs; uploads, discovery and auto-apply runs refused.
+      - key: JA_DEMO_MODE
+        value: "true"
+      # Required off loopback. Render generates it; copy it into Vercel as JOBORBIT_API_TOKEN.
+      - key: JA_API_TOKEN
+        generateValue: true
+      - key: JA_LOG_LEVEL
+        value: INFO
