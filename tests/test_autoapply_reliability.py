@@ -759,3 +759,39 @@ def test_demo_mode_refuses_the_safety_controls(demo_client) -> None:
     for path in ("/api/autoapply/emergency-stop", "/api/autoapply/evidence/cleanup"):
         response = demo_client.post(path, json={})
         assert response.status_code == 403, path
+
+
+def test_auto_apply_never_sends_a_junior_to_a_senior_title(
+    configured: TestApplicationServer, session: Session, verified_profile, profile
+) -> None:
+    """The feed may show a stretch role; auto-apply must not send to one.
+
+    Regression: a "Sr." title with no stated years passed as ready for a junior profile,
+    because the matcher's seniority tolerance (two levels) is meant for browsing.
+    """
+    verified_profile.experience_level = "junior"
+    senior = _job(
+        session, configured, "SEN-1", external_id="SEN-1", title="Sr. Software Development Engineer"
+    )
+    senior.experience_min_years = None
+    _score(session, senior, profile, score=95)
+    peer = _job(session, configured, "SEN-2", external_id="SEN-2", title="Software Engineer")
+    peer.experience_min_years = None
+    _score(session, peer, profile, score=80)
+    session.commit()
+
+    graded = _job(session, configured, "SEN-3", external_id="SEN-3", title="Software Engineer 3")
+    graded.experience_min_years = None
+    _score(session, graded, profile, score=90)
+    next_step = _job(session, configured, "SEN-4", external_id="SEN-4", title="SDE-II Backend")
+    next_step.experience_min_years = None
+    _score(session, next_step, profile, score=85)
+    session.commit()
+
+    plan = run_preflight(session, profile, AutoApplyTargets(**LIVE))
+    by_id = {item.job_id: item for item in plan.jobs}
+    assert by_id[senior.id].status == "blocked"
+    assert "level-3" in " ".join(by_id[senior.id].blocking_reasons)
+    assert by_id[graded.id].status == "blocked", "a numbered grade 3 is above a junior"
+    assert by_id[next_step.id].status == "ready", "one grade up is allowed"
+    assert by_id[peer.id].status == "ready", "a title without a level must not be blocked"

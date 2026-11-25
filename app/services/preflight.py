@@ -22,6 +22,7 @@ Nothing here contacts a provider or writes to the database.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -49,10 +50,11 @@ from app.db.models import (
     utcnow,
 )
 from app.services.batch import confidence_at_least
+from app.services.filters import SENIORITY_BY_LEVEL
 from app.services.questions import build_question_set
 from app.services.redaction import mask_value
 from app.services.resume_variants import infer_job_family
-from app.services.text import normalize_company, normalize_location
+from app.services.text import normalize_company, normalize_location, seniority_level
 from app.services.tracking import blocking_questions
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -193,8 +195,45 @@ class Preflight:
 # --------------------------------------------------------------------------------------
 
 
+#: How far above the candidate's own level a title may be before auto-apply will not send
+#: to it. The feed is looser on purpose (it shows a stretch role so the user can decide);
+#: sending an application is a stronger act, so one level up is the limit here.
+AUTOAPPLY_SENIORITY_STEP = 1
+
+
+#: A numbered grade after a role word: "Software Engineer 3", "SDE-II", "Analyst IV".
+#: Numbered grades are the usual way large employers write seniority, and the word-based
+#: detector cannot see them. Roman numerals are matched only after a role word, so a
+#: pronoun "I" elsewhere in a title cannot be read as a grade.
+_NUMBERED_GRADE = re.compile(
+    r"\b(?i:engineer|developer|sde|swe|programmer|analyst|scientist|associate)"
+    r"\s*[-,]?\s*(IV|III|II|I|[1-5])\b"
+)
+_GRADE_VALUE = {"I": 1, "II": 2, "III": 3, "IV": 4}
+
+
+def _title_grade(title: str) -> int | None:
+    """Seniority from a title's words and from a numbered grade, whichever is higher."""
+    levels = [level for level in (seniority_level(title),) if level is not None]
+    for match in _NUMBERED_GRADE.finditer(title or ""):
+        token = match.group(1)
+        levels.append(_GRADE_VALUE.get(token) or int(token))
+    return max(levels) if levels else None
+
+
 def _experience_fit(job: Job, profile: CandidateProfile, tolerance: float | None) -> Fit:
     required = job.experience_min_years
+    title_level = _title_grade(job.title or "")
+    own_level = SENIORITY_BY_LEVEL.get(profile.experience_level or "", 0)
+    if title_level is not None and title_level - own_level > AUTOAPPLY_SENIORITY_STEP:
+        # Checked even when the listing gives years: "Sr." with "2+ years" is still a
+        # senior hire, and the title is what the employer screens on first.
+        return Fit(
+            "fail",
+            f"the title reads as a level-{title_level} role and your profile is "
+            f"'{profile.experience_level}' (level {own_level}); auto-apply only sends to "
+            f"roles at most {AUTOAPPLY_SENIORITY_STEP} level above yours",
+        )
     if required is None:
         return Fit("unknown", "the listing states no minimum experience")
     have = float(profile.years_experience or 0.0)
