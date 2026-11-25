@@ -17,6 +17,9 @@ var/
 *.sqlite3
 data/
 logs/
+# The dashboard's Logs page is source code, not log output.
+!frontend/src/app/(workspace)/logs/
+!frontend/src/components/logs/
 *.log
 
 # Python
