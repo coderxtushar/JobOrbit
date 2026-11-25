@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Schemas } from "@/lib/api/client";
 import { formatNumber, humanize } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
 
@@ -71,35 +72,7 @@ function DiscoverDialog({
               {results.length} source{results.length === 1 ? "" : "s"}
             </p>
             {results.length ? (
-              <div className="max-h-72 overflow-y-auto rounded-lg border border-line">
-                <ul className="divide-y divide-line">
-                  {results.map((item) => (
-                    <li key={item.import_run_id} className="space-y-0.5 px-3 py-2 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-text-1">{sourceLabel(item.source)}</span>
-                        <span
-                          className={cn(
-                            "text-[11px]",
-                            item.errors?.length ? "text-danger" : item.status.toLowerCase().includes("skip") ? "text-text-3" : "text-success",
-                          )}
-                        >
-                          {humanize(item.status)}
-                        </span>
-                      </div>
-                      <p className="tabular text-text-3">
-                        {item.records_received} received · {item.jobs_created} new · {item.jobs_updated} updated
-                        {item.records_invalid ? ` · ${item.records_invalid} invalid` : ""}
-                      </p>
-                      {item.message ? <p className="text-text-2">{item.message}</p> : null}
-                      {item.errors?.slice(0, 2).map((error) => (
-                        <p key={error} className="text-danger">
-                          {error}
-                        </p>
-                      ))}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <DiscoveryResults results={results} />
             ) : (
               <p className="text-xs text-text-3">No source is enabled, so nothing was asked.</p>
             )}
@@ -199,6 +172,70 @@ export function JobsViewSkeleton() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+type DiscoveryResult = Schemas["ImportSummary"];
+
+/**
+ * Per-source results, sources that ran first. Sources skipped because they are not
+ * configured or not permitted are folded away with their reason, each shown once: the
+ * backend repeats the skip reason in `errors`, which previously printed it twice.
+ */
+function DiscoveryResults({ results }: { results: DiscoveryResult[] }) {
+  const skipped = results.filter((item) => item.status.toLowerCase().includes("skip"));
+  const ran = results.filter((item) => !item.status.toLowerCase().includes("skip"));
+  const row = (item: DiscoveryResult) => {
+    const extraErrors = (item.errors ?? []).filter((error) => error !== item.message);
+    return (
+      <li key={item.import_run_id} className="space-y-0.5 px-3 py-2 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium text-text-1">{sourceLabel(item.source)}</span>
+          <span
+            className={cn(
+              "text-[11px]",
+              extraErrors.length ? "text-danger" : item.status.toLowerCase().includes("skip") ? "text-text-3" : "text-success",
+            )}
+          >
+            {humanize(item.status)}
+          </span>
+        </div>
+        {item.status.toLowerCase().includes("skip") ? null : (
+          <p className="tabular text-text-3">
+            {item.records_received} received · {item.jobs_created} new · {item.jobs_updated} updated
+            {item.duplicates_detected ? ` · ${item.duplicates_detected} already stored` : ""}
+            {item.records_invalid ? ` · ${item.records_invalid} invalid` : ""}
+          </p>
+        )}
+        {item.message ? <p className="text-text-2">{item.message}</p> : null}
+        {extraErrors.slice(0, 2).map((error) => (
+          <p key={error} className="text-danger">
+            {error}
+          </p>
+        ))}
+      </li>
+    );
+  };
+  return (
+    <div className="space-y-2">
+      {ran.length ? (
+        <div className="max-h-72 overflow-y-auto rounded-lg border border-line">
+          <ul className="divide-y divide-line">{ran.map(row)}</ul>
+        </div>
+      ) : (
+        <p className="text-xs text-text-3">No source could be fetched. The skipped sources below say why.</p>
+      )}
+      {skipped.length ? (
+        <details className="group rounded-lg border border-line">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs text-text-3 hover:text-text-1">
+            {skipped.length} source{skipped.length === 1 ? " was" : "s were"} skipped (not configured, switched
+            off, or not permitted) · show why
+          </summary>
+          <ul className="max-h-60 divide-y divide-line overflow-y-auto border-t border-line">{skipped.map(row)}</ul>
+        </details>
+      ) : null}
     </div>
   );
 }
