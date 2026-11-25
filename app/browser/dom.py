@@ -166,6 +166,9 @@ _DISCOVER_JS = r"""
       const type = (el.getAttribute('type') || (el.tagName === 'INPUT' ? 'text' : el.tagName)).toLowerCase();
       if (['hidden', 'submit', 'button', 'reset', 'image', 'search'].includes(type)) return;
       if (/^(g-recaptcha-response|h-captcha-response|cf-turnstile-response)/.test(el.name || el.id || '')) return;
+      // A dropdown's hidden "required" helper (react-select renders one per required
+      // select) and anything hidden from assistive technology is not a question.
+      if (/requiredInput/i.test(String(el.className || '')) || el.getAttribute('aria-hidden') === 'true') return;
       if (type === 'radio' || type === 'checkbox') {
         const key = (el.name || el.id || ('anon' + idx)) + (root === document ? '' : '@shadow');
         if (!groups.has(key)) groups.set(key, []);
@@ -375,6 +378,26 @@ def _best_option(wanted: str, options: tuple[str, ...]) -> int:
     return -1
 
 
+def _place_option(wanted: str, options: tuple[str, ...]) -> int:
+    """The option a multi-part answer ("Gurgaon, Haryana") refers to, or -1.
+
+    Every part of the answer must appear in the option as a whole word. Matching only the
+    first part would happily pick "Gurgaon, Bihar, India" for "Gurgaon, Haryana", and the
+    employer would read the wrong state. A single-part answer uses the ordinary match.
+    """
+    index = _best_option(wanted, options)
+    if index >= 0:
+        return index
+    parts = [part.strip().casefold() for part in wanted.split(",") if part.strip()]
+    if len(parts) < 2:
+        return -1
+    for position, option in enumerate(options):
+        text = option.casefold()
+        if all(re.search(rf"(?<!\w){re.escape(part)}(?!\w)", text) for part in parts):
+            return position
+    return -1
+
+
 class FillError(RuntimeError):
     """A value could not be set, or did not stay set. The form is not submitted."""
 
@@ -442,11 +465,17 @@ def upload_file(page: Page, dom_field: DomField, path: str) -> None:
     name = path.rsplit("/", 1)[-1]
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        attached = locator.evaluate(
-            "(el, name) => { const files = el.files ? Array.from(el.files).map(f => f.name) : [];"
-            " return files.includes(name) || (document.body.innerText || '').includes(name); }",
-            name,
-        )
+        # Many forms swap the file input for a "filename ✕" chip once a file is attached,
+        # so the tagged input may be gone; the page text is then the evidence.
+        if page.locator(dom_field.selector).count():
+            attached = locator.evaluate(
+                "(el, name) => { const files = el.files ? Array.from(el.files).map(f => f.name) : [];"
+                " return files.includes(name) || (document.body.innerText || '').includes(name); }",
+                name,
+                timeout=3000,
+            )
+        else:
+            attached = name in page_text(page)
         if attached:
             return
         page.wait_for_timeout(300)
@@ -475,8 +504,16 @@ def _maybe_pick_suggestion(page: Page, dom_field: DomField, typed: str) -> None:
     options = _visible_options(page)
     if not options:
         return
-    index = _best_option(typed.split(",")[0], options)
+    index = _place_option(typed, options)
     if index < 0:
+        if "," in typed:
+            # The answer names a region the suggestions do not: refuse rather than send a
+            # same-named place somewhere else.
+            page.keyboard.press("Escape")
+            raise FillError(
+                f"{dom_field.label}: none of the suggestions matches {typed!r} "
+                f"(offered: {'; '.join(options[:4])}). Save the place exactly as the site names it."
+            )
         return
     _click_visible_option(page, options[index])
 
@@ -491,20 +528,46 @@ def _fill_combobox(page: Page, dom_field: DomField, value: str, pacing: Pacing) 
         locator.type(value.split(",")[0], delay=random.randint(20, 50))
         page.wait_for_timeout(1200)
         options = _visible_options(page)
-    index = _best_option(value, options) if options else -1
-    if index < 0 and options:
-        index = _best_option(value.split(",")[0], options)
+    index = _place_option(value, options) if options else -1
     if index < 0:
         page.keyboard.press("Escape")
-        raise FillError(f"{dom_field.label}: no choice matching {value!r} was offered")
+        offered = f" (offered: {'; '.join(options[:4])})" if options else ""
+        raise FillError(
+            f"{dom_field.label}: no choice matching {value!r} was offered{offered}. "
+            "Save the answer exactly as the site names it."
+        )
     _click_visible_option(page, options[index])
     pacing.pause(0.4)
     shown = locator.evaluate(
         "el => { const box = el.closest('[class*=container], .select, .field') || el.parentElement;"
-        " return (el.value || '') + ' ' + (box ? box.innerText : ''); }"
+        " let wide = el; for (let i = 0; i < 4 && wide.parentElement; i++) wide = wide.parentElement;"
+        " return [el.value || '', box ? box.innerText : '', wide.innerText.slice(0, 400)].join(' '); }"
     )
-    if options[index].casefold()[:20] not in str(shown).casefold():
+    if not _choice_is_shown(options[index], str(shown)):
         raise FillError(f"{dom_field.label}: {options[index]!r} was chosen but is not shown")
+
+
+def _choice_is_shown(option: str, shown: str) -> bool:
+    """Whether the control now displays the chosen option.
+
+    Some pickers show a shortened value: a phone-country picker chooses "India +91" and
+    displays a flag and "+91". The full text, or a distinctive part of it (a code such as
+    "+91", or a word of three or more letters) appearing as a whole word, confirms it. A
+    different choice ("+44" for "+1") does not match, because the match is whole-word.
+    """
+    text = shown.casefold()
+    wanted = option.casefold().strip()
+    head = wanted[:20]
+    # Whole-word at the start, and at the end too unless the option was cut at 20 chars.
+    tail = "" if len(wanted) > 20 else r"(?!\w)"
+    if head and re.search(rf"(?<!\w){re.escape(head)}{tail}", text):
+        return True
+    for token in re.findall(r"[+]?[\w]+", wanted):
+        if not (token.startswith("+") or token.isdigit() or len(token) >= 3):
+            continue
+        if re.search(rf"(?<![\w+]){re.escape(token)}(?!\w)", text):
+            return True
+    return False
 
 
 def _click_visible_option(page: Page, text: str) -> None:

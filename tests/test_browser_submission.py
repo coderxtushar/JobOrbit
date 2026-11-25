@@ -658,3 +658,41 @@ def test_a_custom_domain_greenhouse_job_routes_to_the_greenhouse_embed_form() ->
     # No Greenhouse discovery behind it, or no usable id: still an unknown form.
     assert target_for_job(job("https://careers.example.com/role/9", None)).key == "unknown"
     assert target_for_job(job("https://careers.example.com/role/9", "acme", "abc")).key == "unknown"
+
+
+def test_a_form_rebuilt_after_it_was_read_is_matched_again_and_filled(
+    browser, forms, tmp_path, resume
+) -> None:
+    """Regression: Rubrik's embed form re-rendered after inspection and the fill timed out."""
+    import time
+
+    adapter = _adapter(browser, "greenhouse", tmp_path)
+    job = Job(
+        title="Backend Developer",
+        company="acme",
+        url=forms.url("greenhouse", "acme", "GH-RR", "Backend Developer", rerender=1),
+    )
+    adapter.inspect_application(job)
+    time.sleep(2.5)  # the page rebuilds its form 1.5 s after load
+    opened = adapter._open[adapter._job_key(job)]
+    tags = adapter._call(lambda _ctx: opened.page.locator("[data-jo-field]").count())
+    assert tags == 0, "the fixture should have dropped the tags before filling starts"
+    result = _apply(adapter, job, _answers("acme"), resume)
+
+    assert result.state is SubmissionState.SUBMITTED_CONFIRMED, result.reason
+    assert len(_received(forms, "GH-RR")) == 1
+
+
+def test_a_form_that_rerenders_when_the_resume_is_attached_is_still_filled(
+    browser, forms, tmp_path, resume
+) -> None:
+    """Regression: Rubrik's form replaced the file input on upload and the fill hung 45 s."""
+    job = Job(
+        title="Backend Developer",
+        company="acme",
+        url=forms.url("greenhouse", "acme", "GH-UR", "Backend Developer", upload_rerender=1),
+    )
+    result = _apply(_adapter(browser, "greenhouse", tmp_path), job, _answers("acme"), resume)
+
+    assert result.state is SubmissionState.SUBMITTED_CONFIRMED, result.reason
+    assert len(_received(forms, "GH-UR")) == 1

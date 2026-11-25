@@ -541,24 +541,76 @@ class BrowserFormAdapter(SubmissionAdapter):
         self._staged.append(path)
         return str(path)
 
+    def _retag_if_rerendered(self, page: Page, opened: _OpenForm) -> None:
+        """Re-read the form if it was re-drawn since it was inspected.
+
+        Single-page forms (Greenhouse's embed, for one) can rebuild their DOM after load —
+        an autofill prompt, a consent banner, a client-side re-render — which drops the
+        ``data-jo-field`` tags. The fields are then found again and matched to the ones
+        already read by kind, label and position among same-labelled fields, so nothing
+        is typed into a field that was not inspected. An unmatched field stops the fill.
+        """
+        known = [*opened.dom_by_name.values()]
+        if opened.resume_field is not None:
+            known.append(opened.resume_field)
+        if not known or all(page.locator(item.selector).count() for item in known):
+            return
+        logger.info("form_rerendered_retagging", extra={"target": self.target.key})
+
+        def key_counts(fields: list[dom.DomField]) -> dict[int, tuple[str, str, int]]:
+            seen: dict[tuple[str, str], int] = {}
+            keys: dict[int, tuple[str, str, int]] = {}
+            for item in sorted(fields, key=lambda field: field.index):
+                base = (item.kind, item.label.strip().casefold())
+                seen[base] = seen.get(base, 0) + 1
+                keys[item.index] = (*base, seen[base])
+            return keys
+
+        old_keys = key_counts(known)
+        fresh = dom.discover_fields(page)
+        fresh_keys = key_counts(fresh)
+        by_key = {fresh_keys[item.index]: item for item in fresh}
+        remapped: dict[str, dom.DomField] = {}
+        for name, item in opened.dom_by_name.items():
+            match = by_key.get(old_keys[item.index])
+            if match is None:
+                raise dom.FillError(f"field {item.label or name} changed after the form was read")
+            remapped[name] = dataclasses.replace(match, options=item.options or match.options)
+        opened.dom_by_name = remapped
+        if opened.resume_field is not None:
+            match = by_key.get(old_keys[opened.resume_field.index])
+            if match is None:
+                raise dom.FillError("the resume upload changed after the form was read")
+            opened.resume_field = match
+
     def _fill(self, page: Page, opened: _OpenForm, form: FilledForm, resume_path: str) -> None:
+        self._retag_if_rerendered(page, opened)
         if opened.resume_field is not None:
             if not resume_path:
                 raise dom.FillError("the form wants a resume and none is on file")
             dom.upload_file(page, opened.resume_field, resume_path)
             self._pacing.pause()
+            # Attaching a file commonly re-renders the form; the upload input itself is
+            # often replaced, so it is no longer something to re-find.
+            opened.resume_field = None
         for name, value in form.values.items():
-            target = opened.dom_by_name.get(name)
-            if target is None:
-                raise dom.FillError(f"field {name} is no longer on the page")
+            target = self._current(page, opened, name)
             dom.fill_field(page, target, value, self._pacing)
             self._pacing.pause()
         for name, ticked in form.checked.items():
-            target = opened.dom_by_name.get(name)
-            if target is None:
-                raise dom.FillError(f"field {name} is no longer on the page")
+            target = self._current(page, opened, name)
             dom.set_checkbox(page, target, ticked)
             self._pacing.pause(0.5)
+
+    def _current(self, page: Page, opened: _OpenForm, name: str) -> dom.DomField:
+        """The field to fill, re-read first if the form was re-rendered since."""
+        target = opened.dom_by_name.get(name)
+        if target is None:
+            raise dom.FillError(f"field {name} is no longer on the page")
+        if not page.locator(target.selector).count():
+            self._retag_if_rerendered(page, opened)
+            target = opened.dom_by_name[name]
+        return target
 
     def _failed(
         self, url: str, reference: str, reason: str, category: str, page: Page | None = None

@@ -16,6 +16,8 @@ Each page reproduces the markup the real provider served when it was inspected
 
 Query flags change behaviour per test: ``captcha=1`` shows a challenge frame on Submit,
 ``mfa=1`` asks for an emailed verification code on Submit, ``mfa_on_load=1`` on arrival,
+``rerender=1`` rebuilds the form 1.5 s after load (dropping JobOrbit's field tags),
+``upload_rerender=1`` swaps the file input for a filename chip and drops the tags on upload,
 ``reject=1`` makes the server refuse the submission with a field error, ``silent=1``
 swallows the submission with no response, ``preexisting=1`` puts a confirmation phrase on
 the page before anything is submitted, ``essay=1`` adds a required free-text question and
@@ -52,7 +54,7 @@ async function joSubmit(provider, id, flags, onDone) {
   const form = document.querySelector('form');
   let bad = false;
   form.querySelectorAll('[data-required]').forEach(el => {
-    const empty = el.type === 'file' ? !el.files.length : (el.type === 'checkbox' ? !el.checked : !el.value);
+    const empty = el.type === 'file' ? !(el.files.length || el.dataset.uploaded) : (el.type === 'checkbox' ? !el.checked : !el.value);
     if (empty) { el.setAttribute('aria-invalid', 'true'); bad = true; }
   });
   document.querySelectorAll('[data-q][data-req]').forEach(g => { if (!g.querySelector('[aria-pressed=true]')) bad = true; });
@@ -104,6 +106,8 @@ def _flags(query: dict[str, list[str]]) -> dict[str, bool]:
             "consent",
             "mfa",
             "mfa_on_load",
+            "rerender",
+            "upload_rerender",
         )
     }
 
@@ -116,6 +120,26 @@ def greenhouse_page(company: str, job_id: str, title: str, flags: dict[str, bool
     )
     if flags["mfa_on_load"]:
         pre += "<p>Verify it's you: enter the code we sent to your phone.</p>"
+    if flags["upload_rerender"]:
+        # Like Greenhouse's current form: attaching a file swaps the input for a filename
+        # chip and re-renders the rest of the form, so every JobOrbit tag is dropped.
+        pre += (
+            "<script>document.addEventListener('change', (ev) => { const el = ev.target;"
+            " if (el.type !== 'file' || !el.files.length) return; const name = el.files[0].name;"
+            " const chip = document.createElement('span'); chip.textContent = name + ' ✕';"
+            " const stub = document.createElement('input'); stub.type = 'file'; stub.id = el.id;"
+            " stub.className = 'vh'; stub.dataset.required = ''; stub.dataset.uploaded = '1';"
+            " el.replaceWith(stub, chip); const f = document.querySelector('form');"
+            " f.querySelectorAll('[data-jo-field]').forEach(e => { e.removeAttribute('data-jo-field');"
+            " e.removeAttribute('data-jo-option'); }); }, true);</script>"
+        )
+    if flags["rerender"]:
+        # A single-page form rebuilding its DOM after load: new nodes, no JobOrbit tags.
+        pre += (
+            "<script>setTimeout(() => { const f = document.querySelector('form');"
+            " f.querySelectorAll('[data-jo-field]').forEach(e => { e.removeAttribute('data-jo-field');"
+            " e.removeAttribute('data-jo-option'); }); f.replaceWith(f.cloneNode(true)); }, 1500);</script>"
+        )
     consent = (
         "<div><input type='checkbox' id='question_bgv' data-required>"
         "<label for='question_bgv'>I consent to a background verification check*</label></div>"
@@ -144,6 +168,8 @@ def greenhouse_page(company: str, job_id: str, title: str, flags: dict[str, bool
         <input id="question_rel" type="text" role="combobox" aria-required="true" readonly data-required
                onclick="joOpen('question_rel', ['Yes','No'])">
         <div class="select__single-value" data-combo-value="relative"></div>
+        <input class="css-1a0ro4n-requiredInput" tabindex="-1" aria-label="" required
+               style="opacity:0;position:absolute;width:1px;height:1px">
       </div>
       {consent}
       <div id="errors" role="alert"></div>
