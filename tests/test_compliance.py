@@ -136,8 +136,16 @@ def test_the_tracker_refuses_an_automated_submission_without_provider_evidence()
         assert _automated_submission_permitted(request) is False, request
 
 
-def test_health_states_that_automated_submission_is_unsupported(client: TestClient) -> None:
-    assert client.get("/health").json()["automated_submission_supported"] is False
+def test_health_reports_the_same_submission_targets_as_the_capabilities_endpoint(
+    client: TestClient,
+) -> None:
+    health = client.get("/health").json()
+    capabilities = client.get("/api/autoapply/capabilities").json()
+
+    assert health["automated_submission_targets"] == capabilities["supported_targets"]
+    assert health["automated_submission_supported"] is bool(capabilities["supported_targets"])
+    # Only the hosted ATS forms are ever filled; job boards with no permitted route stay out.
+    assert set(health["automated_submission_targets"]) <= {"greenhouse", "lever", "ashby"}
 
 
 # --------------------------------------------------------------------------------------

@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app import __version__
 from app.api.deps import AppSettings, DbSession
+from app.submission import supported_targets
 
 router = APIRouter(tags=["system"])
 
@@ -20,6 +21,7 @@ def health(session: DbSession, settings: AppSettings) -> dict[str, object]:
     except Exception:
         database_ok = False
 
+    targets = sorted(supported_targets())
     return {
         "status": "ok" if database_ok else "degraded",
         "version": __version__,
@@ -30,5 +32,8 @@ def health(session: DbSession, settings: AppSettings) -> dict[str, object]:
         "scheduler_enabled": settings.scheduler_enabled,
         "loopback_only": settings.is_loopback_only,
         "demo_mode": settings.demo_mode,
-        "automated_submission_supported": False,
+        # Read from the adapters' own capability reports, the same source as
+        # /api/autoapply/capabilities, so the two can never disagree.
+        "automated_submission_supported": bool(targets),
+        "automated_submission_targets": targets,
     }
