@@ -57,11 +57,16 @@ cp .env.example .env
 # 4. Start the API (terminal 1).
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# 5. Start the dashboard (terminal 2).
-.venv/bin/python -m streamlit run ui/streamlit_app.py
+# 5. Start the dashboard (terminal 2): the Next.js workspace (needs Node 20+).
+cd frontend && npm install && cp .env.example .env.local && npm run dev
+
+# The original Streamlit dashboard still works if you prefer it:
+# .venv/bin/python -m streamlit run ui/streamlit_app.py
 ```
 
-Then open **http://localhost:8501**. The API docs are at **http://127.0.0.1:8000/docs**.
+Then open **http://localhost:3000** (or **http://localhost:8501** for the Streamlit
+dashboard). The API docs are at **http://127.0.0.1:8000/docs**. The Next.js app is
+described in [frontend/README.md](frontend/README.md).
 
 ### First run, in order
 
