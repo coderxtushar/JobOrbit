@@ -1,4 +1,29 @@
-# JobOrbit
+<p align="center">
+  <img src="frontend/src/app/icon.svg" width="72" alt="JobOrbit icon">
+</p>
+
+<h1 align="center">JobOrbit</h1>
+
+<p align="center">
+  Find the right jobs. Let JobOrbit fill the forms.
+</p>
+
+<p align="center">
+  <a href="https://job-orbit-chi.vercel.app"><img src="https://img.shields.io/badge/live%20demo-job--orbit--chi.vercel.app-7c3aed?style=flat-square" alt="Live demo"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22b8d9?style=flat-square" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/FastAPI-Python%203.12-009688?style=flat-square" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square" alt="Next.js 16">
+</p>
+
+<p align="center">
+  <a href="https://job-orbit-chi.vercel.app">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/home.webp">
+      <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/home-light.webp">
+      <img src="docs/screenshots/home.webp" alt="The JobOrbit home page" width="100%">
+    </picture>
+  </a>
+</p>
 
 **Live demo: [job-orbit-chi.vercel.app](https://job-orbit-chi.vercel.app)**. Nothing to
 install and no sign-up. It runs with a fictional candidate and seven sample jobs, and each
@@ -8,6 +33,28 @@ JobOrbit for your own job search.
 
 > The demo's API is on a free server that sleeps when idle, so the first page can take up
 > to a minute to load. After that it is quick.
+
+## A look inside
+
+<table>
+  <tr>
+    <td width="50%"><b>Dashboard</b><br>What needs doing today, and where every application stands.<br><br><img src="docs/screenshots/dashboard.webp" alt="Dashboard"></td>
+    <td width="50%"><b>Job discovery</b><br>Every listing scored against your profile, best match first.<br><br><img src="docs/screenshots/jobs.webp" alt="Job discovery"></td>
+  </tr>
+  <tr>
+    <td><b>Why a job matches</b><br>The full score breakdown: skills, title, experience, location.<br><br><img src="docs/screenshots/job-detail.webp" alt="Job match analysis"></td>
+    <td><b>Review queue</b><br>Read and edit every cover letter and answer before anything is sent.<br><br><img src="docs/screenshots/review-queue.webp" alt="Review queue"></td>
+  </tr>
+  <tr>
+    <td><b>Applications</b><br>A board from prepared to offer.<br><br><img src="docs/screenshots/applications.webp" alt="Applications board"></td>
+    <td><b>Interview prep</b><br>Likely questions built from the listing, each citing where it came from.<br><br><img src="docs/screenshots/interview-prep.webp" alt="Interview prep"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><b>Analytics</b><br>The funnel from discovered to offer, computed only from recorded data.<br><br><img src="docs/screenshots/analytics.webp" alt="Analytics"></td>
+  </tr>
+</table>
+
+All screenshots are from the live demo, with its fictional candidate and sample jobs.
 
 A local-first job search and application assistant. It reads your resume, imports job
 listings you supply, ranks them against your profile with a transparent rule-based score,
@@ -741,7 +788,13 @@ migrations/ Alembic environment and the initial revision
 var/        gitignored: database, resumes, artifacts, import payloads
 ```
 
-## Licence and intent
+## License
 
-Written for personal use by a single jobseeker on their own data. It is not a scraping
-tool, not a bulk application bot, and not safe to point at someone else's account.
+JobOrbit is released under the [MIT License](LICENSE). Copyright (c) 2026 Tushar Gautam.
+
+You may use, copy, change and share it freely, including commercially, as long as the
+copyright notice and licence text stay with it. It comes with no warranty.
+
+**Intent.** JobOrbit is written for a single jobseeker working on their own data. It is
+not a scraping tool, not a bulk application bot, and not safe to point at someone else's
+account.

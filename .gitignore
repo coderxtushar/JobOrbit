@@ -52,6 +52,7 @@ htmlcov/
 # Evidence, browser state and tokens. All live under var/ already; these catch copies made
 # elsewhere by hand.
 screenshots/
+!docs/screenshots/
 secrets/
 *.har
 trace*.zip
