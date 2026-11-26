@@ -34,8 +34,9 @@ class EchoProvider(LLMProvider):
     name = "echo"
     model = "echo"
 
-    def __init__(self, reply: str = "") -> None:
+    def __init__(self, reply: str = "", *, truncated: bool = False) -> None:
         self._reply = reply
+        self._truncated = truncated
 
     @property
     def available(self) -> bool:
@@ -43,5 +44,8 @@ class EchoProvider(LLMProvider):
 
     def complete(self, system: str, user: str, *, max_tokens: int = 800) -> LLMResponse:
         return LLMResponse(
-            text=self._reply or user[:max_tokens], provider=self.name, model=self.model
+            text=self._reply or user[:max_tokens],
+            provider=self.name,
+            model=self.model,
+            truncated=self._truncated,
         )

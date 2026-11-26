@@ -34,11 +34,9 @@ class OpenAIProvider(LLMProvider):
                 "`pip install -e '.[llm]'` or set JA_LLM_PROVIDER=none"
             ) from exc
 
-        kwargs: dict[str, object] = {"api_key": api_key, "timeout": timeout}
         if base_url:
-            kwargs["base_url"] = base_url
             self.name = "openai_compatible"
-        self._client = OpenAI(**kwargs)
+        self._client = OpenAI(api_key=api_key, base_url=base_url or None, timeout=timeout)
 
     @property
     def available(self) -> bool:

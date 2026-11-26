@@ -21,7 +21,6 @@ prerequisites documented in :mod:`app.auth`.
 from __future__ import annotations
 
 import secrets
-import shutil
 import sqlite3
 import threading
 import time

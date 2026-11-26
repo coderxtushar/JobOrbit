@@ -208,6 +208,12 @@ def _scan_for_forbidden_claims(text: str, facts: list[str]) -> list[str]:
     return problems
 
 
+#: A ceiling, not a target: a letter is about 300 tokens. Reasoning models (Gemini 2.5 and
+#: later, OpenAI o-series) spend hidden "thinking" tokens from this same budget, and at 500
+#: they ran out before the letter was written.
+_COVER_LETTER_MAX_TOKENS = 2048
+
+
 def generate_cover_letter(
     job: Job,
     profile: CandidateProfile,
@@ -234,12 +240,22 @@ def generate_cover_letter(
         + "\n\nWrite the cover letter now."
     )
     try:
-        response = provider.complete(_COVER_LETTER_SYSTEM, prompt, max_tokens=500)
+        response = provider.complete(
+            _COVER_LETTER_SYSTEM, prompt, max_tokens=_COVER_LETTER_MAX_TOKENS
+        )
     except LLMUnavailable as exc:
         logger.warning(
             "cover letter llm call failed; using rule-based letter", extra={"reason": str(exc)}
         )
         return rule_based, "rule_based", ["The AI draft failed, so a rule-based letter was used."]
+
+    if response.truncated:
+        logger.warning("llm cover letter was cut off; using rule-based letter")
+        return (
+            rule_based,
+            "rule_based",
+            ["The AI draft was cut off before it finished, so a rule-based letter was used."],
+        )
 
     problems = _scan_for_forbidden_claims(response.text, facts)
     if problems:

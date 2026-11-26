@@ -223,6 +223,19 @@ def test_an_llm_draft_that_invents_a_sensitive_claim_is_discarded(
     assert any("discarded" in warning for warning in warnings)
 
 
+def test_an_llm_draft_cut_off_by_the_token_limit_is_discarded(
+    session: Session, profile: CandidateProfile
+) -> None:
+    """A truncated draft is half a letter; it must never be saved as the cover letter."""
+    job = persist_job(session, make_record(external_id="CL-4"))
+    cut_off = EchoProvider(reply="I am writing to apply for the Backend", truncated=True)
+    letter, generated_by, warnings = generate_cover_letter(job, profile, ["python"], cut_off)
+
+    assert generated_by == "rule_based"
+    assert letter != "I am writing to apply for the Backend"
+    assert any("cut off" in warning for warning in warnings)
+
+
 def test_an_acceptable_llm_draft_is_used_and_labelled(
     session: Session, profile: CandidateProfile
 ) -> None:
