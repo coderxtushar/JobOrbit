@@ -149,27 +149,43 @@ described in [frontend/README.md](frontend/README.md).
 
 ## The two surfaces
 
-One Streamlit app serves a public landing page and a private workspace.
+The Next.js app in [`frontend/`](frontend/) serves a public home page and a private
+workspace. Both talk to the FastAPI backend, which stays the source of truth.
 
-**The landing page** is the root URL. It renders markup and reads `JA_DEMO_MODE`, and does
-nothing else: no API start, no database session, no migration, no demo seed. Arriving costs
-a template render, which is asserted two ways — a test walks its AST for banned calls, and
-a browser run confirms no database file is created. Its stylesheet hides the sidebar, so
-the operational chrome only appears once you are inside.
+**The home page** is the root URL (`/`). It explains JobOrbit in short chapters (how it works,
+matching, safety, tracking) with animated previews of the real screens, and links to the
+workspace and the GitHub repository. It makes no API calls, so it loads instantly even
+while the backend is asleep or offline.
 
-**The workspace** is 20 pages across four sections. Routing is `st.navigation`, so every
-page has a real URL that survives refresh, bookmarking and the back button:
+**The workspace** is 16 pages across six sidebar sections, plus a detail page for every
+job and application. Every page has its own URL, so refresh, bookmarks and the back button
+all work:
 
 | Section | Pages |
 |---|---|
-| Main | Overview · Set up your search · Resume and profile · Job discovery · Job feed · Job detail · Saved searches |
-| Platform assistants | Naukri · LinkedIn · Indeed · Wellfound · ATS & other platforms |
-| Applications | Auto-apply · Bulk preparation · Action inbox · Review queue · Application tracker · Analytics |
-| System | Settings and sources · Logs and diagnostics |
+| Workspace | Dashboard |
+| Discover | Job discovery (with a detail page per job) · Saved jobs |
+| Apply | Bulk preparation · Auto-apply · Applications (with a detail page each) · Action inbox · Review queue |
+| Prepare | Resume and profile · Company research · Interview prep |
+| Insights | Analytics · Email tracking |
+| System | Sources · Logs and diagnostics · Settings |
 
-`/overview`, `/linkedin`, `/review` and the rest are all deep-linkable. The embedded API is
-started by one wrapper shared by every workspace page, so it comes up lazily on whichever
-page you open first — including a deep link — and never from the landing page.
+`/dashboard`, `/jobs/42`, `/review-queue` and the rest are all deep-linkable. The app has
+light and dark themes, a command palette for search, and a notification centre for runs
+and replies that need you.
+
+**How the browser reaches the API.** The browser only calls `/api/backend/...` on the
+website's own origin. A Next.js route handler
+([`route.ts`](frontend/src/app/api/backend/%5B...path%5D/route.ts)) forwards each call to
+`JOBORBIT_API_URL` and adds the bearer token on the server, so the token never reaches the
+browser and the API needs no CORS setup. Only the backend's `/api/*` and `/health` paths
+are forwarded. In the hosted demo, the same handler reads the visitor's `httpOnly` demo
+cookie and sends it as a header, which selects that visitor's private copy of the demo
+data. Setup and structure are in [frontend/README.md](frontend/README.md).
+
+**The original Streamlit dashboard** in [`ui/`](ui/) still works against the same API
+(`.venv/bin/python -m streamlit run ui/streamlit_app.py`), but new features land in the
+Next.js app first.
 
 ## The auto-apply engine
 
