@@ -15,5 +15,5 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Pages only: assets and the API proxy never need to mint a key.
-  matcher: ["/((?!api/|_next/|icons/|favicon.ico).*)"],
+  matcher: ["/((?!api/|_next/|icons/|favicon.ico|icon.svg|apple-icon.png).*)"],
 };
