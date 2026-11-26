@@ -1,4 +1,13 @@
-# Job Search Assistant
+# JobOrbit
+
+**Live demo: [job-orbit-chi.vercel.app](https://job-orbit-chi.vercel.app)**. Nothing to
+install and no sign-up. It runs with a fictional candidate and seven sample jobs, and each
+visitor gets a private copy for two hours. **New here? Read the
+[walkthrough](docs/WALKTHROUGH.md)**: a 5-minute tour of the demo, then how to run
+JobOrbit for your own job search.
+
+> The demo's API is on a free server that sleeps when idle, so the first page can take up
+> to a minute to load. After that it is quick.
 
 A local-first job search and application assistant. It reads your resume, imports job
 listings you supply, ranks them against your profile with a transparent rule-based score,
@@ -256,52 +265,64 @@ import-only *by policy*, and each page quotes the specific reason.
 
 ## Deploying a public demo
 
-This app normally runs as **two processes** — a FastAPI service and a Streamlit dashboard
-that talks to it only over HTTP. Streamlit Community Cloud runs exactly one process, so a
-plain deployment shows "Cannot reach the API" on every page. Two things close that gap.
+The live demo is two free services:
 
-**The dashboard starts the API itself when there is nothing to connect to.**
-[`ui/embedded_api.py`](ui/embedded_api.py) runs the migrations and then serves the API on
-loopback inside the same container, once per process. It is a no-op locally, where the API
-is already listening, and a no-op when `JA_API_BASE_URL` names an API elsewhere, so a real
-two-process deployment is never hijacked.
+| Part | Host | What it runs |
+|---|---|---|
+| API | [Render](https://render.com) (free web service) | The FastAPI app in Docker, from [`Dockerfile`](Dockerfile) and [`render.yaml`](render.yaml) |
+| Website | [Vercel](https://vercel.com) (Hobby) | The Next.js app in [`frontend/`](frontend/) |
+
+The browser only ever talks to Vercel. Vercel's server forwards each API call to Render
+and adds the API token there, so the token never reaches a visitor.
 
 **Demo mode replaces your data with sample data.** A shared URL has no per-user login, so
-`JA_DEMO_MODE=true` seeds a fictional candidate plus seven listings and **refuses the writes
-whose cost or blast radius lands on somebody else**:
+`JA_DEMO_MODE=true` seeds a fictional candidate plus seven listings, gives **each visitor
+their own copy of that database** for two hours (keyed by an `httpOnly` cookie the website
+sets), and **refuses the writes whose cost or blast radius lands on somebody else**:
 
 | Refused in demo mode | Why |
 |---|---|
-| Resume upload | No per-user login, so one visitor's resume would be readable by the next |
-| Job import (JSON and CSV) | Writes arbitrary text that every later visitor would see |
-| Discovery runs | Calls other companies' job-board APIs, spending their rate limit per visitor |
-| Bulk preparation runs | A hundred-plus preparations is too expensive for a shared container |
-| Source capability changes | Capabilities are a compliance setting, not a preference |
+| Resume upload | No per-user login, so one visitor's resume could be read by the next |
+| Job import and browser-extension capture | Writes arbitrary text into shared data |
+| Discovery runs and fetching company websites | Spends other companies' rate limits, or the server's network, on every visitor |
+| Bulk preparation and auto-apply runs | Too expensive for a shared container. The previews still work |
+| Email tracking | Would expose a personal mailbox |
+| Source capability changes, emergency stop | Compliance and installation-wide settings, not one visitor's |
 
-Light writes stay enabled — shortlist, skip, score, prepare one application, answer an
-inbox question — because exercising them is the point of the demo and they only touch data
-that is already fictional. Every refusal is enforced in the API, not hidden in the UI, so it
-holds if somebody calls the endpoint directly, and a test fails if a new mutating route is
-added without classifying it.
+Light writes stay enabled (save, skip, score, prepare one application, answer an inbox
+question, generate interview prep) because exercising them is the point of the demo, and
+they only touch that visitor's fictional copy. Every refusal is enforced in the API, not
+hidden in the UI, and a test fails if a new mutating route is added without classifying it.
 
 ### Steps
 
-1. Push the repository to GitHub.
-2. On [share.streamlit.io](https://share.streamlit.io), create an app pointing at
-   **`ui/streamlit_app.py`**.
-3. Under **Advanced settings → Secrets**, add:
+**1. The API on Render**
 
-   ```toml
-   JA_DEMO_MODE = "true"
-   ```
+1. Sign in to Render with GitHub.
+2. **New → Blueprint**, pick this repository, and press **Apply**. Render reads
+   `render.yaml`: one free Docker service with `JA_DEMO_MODE=true` and a generated
+   `JA_API_TOKEN`.
+3. When it shows **Live**, copy the service URL and, from the **Environment** tab, the
+   value of `JA_API_TOKEN`.
+4. Check `https://<your-service>.onrender.com/health`. It should show `"demo_mode":true`.
 
-4. Deploy. The landing page appears immediately. The first workspace page you open takes
-   about half a minute while migrations run and the sample feed is scored.
+**2. The website on Vercel**
 
-The seeded feed is chosen to show every honesty case in one screen: three genuine matches
-in the high band, a senior role filtered with its stated years quoted, a content-free
-listing that scores 100 and is still demoted to *worth a look* at low confidence, a
-support role below the threshold, and a sales role filtered out.
+1. Sign in to Vercel with GitHub, then **Add New → Project** and import this repository.
+2. Set **Root Directory** to `frontend`. Vercel detects Next.js.
+3. Add three environment variables:
+
+   | Name | Value |
+   |---|---|
+   | `JOBORBIT_API_URL` | The Render URL, with no trailing slash |
+   | `JOBORBIT_API_TOKEN` | The `JA_API_TOKEN` value from Render |
+   | `JOBORBIT_DEMO` | `1` |
+
+4. Press **Deploy**. After changing a variable later, redeploy so it takes effect.
+
+Render's free plan sleeps after 15 minutes without traffic and takes about a minute to
+wake, and its disk is temporary, so the demo data resets on every restart. That is fine
+for a demo. It is not a place for real data.
 
 ### Sign-in is designed for, not enabled
 
@@ -325,11 +346,11 @@ until all four exist:
 
 ### What not to deploy
 
-**Do not deploy with your own resume.** Streamlit Cloud's filesystem is ephemeral and
-shared-by-URL: the database resets on redeploy, and until it does, anyone with the link
+**Do not deploy with your own resume.** A free host's filesystem is temporary and
+shared by URL: the database resets on redeploy, and until it does, anyone with the link
 reads your profile, your answers and your applications. If you want your real data on a
-hosted instance, host the API separately with `JA_API_TOKEN` set and keep the Streamlit app
-private — and understand that you are then responsible for a server holding your own PII.
+hosted instance, keep `JA_API_TOKEN` set and keep the website private, and understand
+that you are then responsible for a server holding your own PII.
 
 For your own job search, run it locally. That is what the Quick start above does, and it is
 the only configuration where your resume never leaves your machine.
