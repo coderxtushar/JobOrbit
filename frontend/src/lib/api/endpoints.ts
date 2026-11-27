@@ -50,6 +50,11 @@ export const api = {
   platforms: () => request<S["PlatformSummary"][]>("/api/platforms"),
   platform: (key: string) => request<S["PlatformDetail"]>(`/api/platforms/${enc(key)}`),
 
+  // ---------------- account (hosted sign-in) ----------------
+  me: () => request<S["AccountRead"]>("/api/auth/me"),
+  deleteAccount: (confirmEmail: string) =>
+    request<void>("/api/auth/account/delete", { method: "POST", body: { confirm_email: confirmEmail } }),
+
   // ---------------- profile and resumes ----------------
   profile: () => request<S["ProfileRead"]>("/api/profile"),
   updateProfile: (body: S["ProfileUpdate"]) =>

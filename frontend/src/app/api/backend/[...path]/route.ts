@@ -9,15 +9,22 @@
  * - The backend needs no CORS configuration: it is reached server-to-server.
  *
  * Only the backend's own /api/* and /health paths are forwarded, to the one configured
- * origin, so this cannot be used to make requests anywhere else. Cookies are not forwarded;
- * in the hosted demo, the visitor's demo key is read from its cookie and sent as a header.
+ * origin, so this cannot be used to make requests anywhere else. Cookies are not forwarded:
+ * a signed-in visitor's session and a demo visitor's key are read from this site's httpOnly
+ * cookies and sent as headers (see src/lib/auth/session.ts).
  */
 import type { NextRequest } from "next/server";
 
+import {
+  BACKEND_TOKEN,
+  BACKEND_URL,
+  DEMO_API_TOKEN,
+  DEMO_API_URL,
+  SEPARATE_DEMO,
+  SESSION_COOKIE,
+  isSessionToken,
+} from "@/lib/auth/session";
 import { DEMO_COOKIE, DEMO_ENABLED, isDemoKey } from "@/lib/demo/session";
-
-const BACKEND = (process.env.JOBORBIT_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
-const TOKEN = process.env.JOBORBIT_API_TOKEN ?? process.env.JA_API_TOKEN ?? "";
 
 // The demo key comes from this site's own httpOnly cookie, never from a header the browser
 // could set, so a page script cannot point a request at another visitor's copy.
@@ -47,11 +54,23 @@ async function forward(
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  if (TOKEN) headers.set("authorization", `Bearer ${TOKEN}`);
-  if (DEMO_ENABLED) {
-    const key = request.cookies.get(DEMO_COOKIE)?.value;
-    if (isDemoKey(key)) headers.set("x-demo-session", key);
+  // Which API, and as whom. Both come from this site's own httpOnly cookies, never from a
+  // header the browser could set, so page script cannot act as another visitor.
+  const session = request.cookies.get(SESSION_COOKIE)?.value;
+  const demoKey = request.cookies.get(DEMO_COOKIE)?.value;
+  let BACKEND = BACKEND_URL;
+  let token = BACKEND_TOKEN;
+  if (isSessionToken(session)) {
+    headers.set("x-joborbit-session", session);
+  } else if (SEPARATE_DEMO && isDemoKey(demoKey)) {
+    // A signed-out visitor who chose "Try the demo" talks to the demo API instead.
+    BACKEND = DEMO_API_URL;
+    token = DEMO_API_TOKEN;
+    headers.set("x-demo-session", demoKey);
+  } else if (DEMO_ENABLED && isDemoKey(demoKey)) {
+    headers.set("x-demo-session", demoKey);
   }
+  if (token) headers.set("authorization", `Bearer ${token}`);
 
   const hasBody = !["GET", "HEAD"].includes(request.method);
   let upstream: Response;

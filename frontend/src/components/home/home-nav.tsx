@@ -19,7 +19,7 @@ const LINKS = [
   { href: "#tracking", label: "Tracking" },
 ];
 
-export function HomeNav() {
+export function HomeNav({ signInFirst = false }: { signInFirst?: boolean }) {
   const { scrollY } = useScroll();
   const [scrolled, setScrolled] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
@@ -87,11 +87,11 @@ export function HomeNav() {
           </button>
           <motion.div whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }}>
             <Link
-              href="/dashboard"
+              href={signInFirst ? "/signin" : "/dashboard"}
               className="group inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-lg bg-text-1 px-4 text-[13px] font-semibold text-background transition-[transform,opacity] duration-200 hover:-translate-y-0.5 hover:opacity-90 active:translate-y-0 active:scale-[0.97]"
             >
-              <span className="hidden sm:inline">Open the dashboard</span>
-              <span className="sm:hidden">Dashboard</span>
+              <span className="hidden sm:inline">{signInFirst ? "Sign in" : "Open the dashboard"}</span>
+              <span className="sm:hidden">{signInFirst ? "Sign in" : "Dashboard"}</span>
               <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </motion.div>

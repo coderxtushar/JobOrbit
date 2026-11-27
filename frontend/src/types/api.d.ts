@@ -24,6 +24,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange a verified Google ID token for a session */
+        post: operations["create_session_api_auth_session_post"];
+        /** Sign out this browser */
+        delete: operations["delete_session_api_auth_session_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who this request is acting for */
+        get: operations["read_me_api_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/account/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete this account and everything JobOrbit holds for it */
+        post: operations["delete_my_account_api_auth_account_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/profile": {
         parameters: {
             query?: never;
@@ -1676,6 +1728,43 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountDelete */
+        AccountDelete: {
+            /** Confirm Email */
+            confirm_email: string;
+        };
+        /** AccountRead */
+        AccountRead: {
+            /** Auth Mode */
+            auth_mode: string;
+            /**
+             * Email
+             * @default
+             */
+            email: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Picture Url
+             * @default
+             */
+            picture_url: string;
+            /**
+             * Is Admin
+             * @default false
+             */
+            is_admin: boolean;
+            /** Profile Id */
+            profile_id?: number | null;
+            /**
+             * Onboarding Completed
+             * @default false
+             */
+            onboarding_completed: boolean;
+        };
         /** ActionResult */
         ActionResult: {
             /**
@@ -4557,6 +4646,29 @@ export interface components {
             /** Source */
             source: string;
         };
+        /** SessionCreate */
+        SessionCreate: {
+            /** Id Token */
+            id_token: string;
+            /**
+             * User Agent
+             * @default
+             */
+            user_agent: string;
+        };
+        /** SessionRead */
+        SessionRead: {
+            /** Session Token */
+            session_token: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Is New User */
+            is_new_user: boolean;
+            account: components["schemas"]["AccountRead"];
+        };
         /** SkillFindingRead */
         SkillFindingRead: {
             /** Skill */
@@ -4967,11 +5079,144 @@ export interface operations {
             };
         };
     };
+    create_session_api_auth_session_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-joborbit-session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_session_api_auth_session_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-joborbit-session"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_me_api_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-joborbit-session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_account_api_auth_account_delete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-joborbit-session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_profile_api_profile_get: {
         parameters: {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5003,6 +5248,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5038,6 +5284,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5072,6 +5319,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5103,6 +5351,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5138,6 +5387,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 resume_id: number;
@@ -5171,6 +5421,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 resume_id: number;
@@ -5204,6 +5455,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 resume_id: number;
@@ -5237,6 +5489,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 resume_id: number;
@@ -5270,6 +5523,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5305,6 +5559,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5340,6 +5595,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5375,6 +5631,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5410,6 +5667,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5450,6 +5708,7 @@ export interface operations {
                 min_score?: number | null;
                 max_age_days?: number | null;
                 include_duplicates?: boolean;
+                include_expired?: boolean;
                 sort_by?: string;
                 descending?: boolean;
                 limit?: number;
@@ -5457,6 +5716,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5488,6 +5748,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 job_id: number;
@@ -5521,6 +5782,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 job_id: number;
@@ -5554,6 +5816,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 job_id: number;
@@ -5589,6 +5852,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 job_id: number;
@@ -5622,6 +5886,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5662,6 +5927,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5693,6 +5959,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -5726,6 +5993,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -5763,6 +6031,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -5796,6 +6065,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -5829,6 +6099,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -5862,6 +6133,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5900,6 +6172,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5931,6 +6204,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5966,6 +6240,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -5999,6 +6274,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6034,6 +6310,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6067,6 +6344,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6098,6 +6376,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6135,6 +6414,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6173,6 +6453,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6204,6 +6485,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6237,6 +6519,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6272,6 +6555,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6305,6 +6589,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6338,6 +6623,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 run_id: number;
@@ -6369,6 +6655,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6404,6 +6691,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6435,6 +6723,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6470,6 +6759,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6501,6 +6791,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6536,6 +6827,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6567,6 +6859,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 target: string;
@@ -6600,6 +6893,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6633,6 +6927,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 attempt_id: number;
@@ -6666,6 +6961,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 attempt_id: number;
@@ -6697,6 +6993,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 attempt_id: number;
@@ -6730,6 +7027,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 attempt_id: number;
@@ -6767,6 +7065,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6800,6 +7099,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6831,6 +7131,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 question_key: string;
@@ -6868,6 +7169,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 question_key: string;
@@ -6899,6 +7201,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6930,6 +7233,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 key: string;
@@ -6963,6 +7267,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6994,6 +7299,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7029,6 +7335,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 search_id: number;
@@ -7060,6 +7367,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 search_id: number;
@@ -7099,6 +7407,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 search_id: number;
@@ -7134,6 +7443,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 search_id: number;
@@ -7167,6 +7477,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7198,6 +7509,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 source: components["schemas"]["SourceName"];
@@ -7235,6 +7547,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7266,6 +7579,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7297,6 +7611,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7328,6 +7643,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7361,6 +7677,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7395,6 +7712,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7430,6 +7748,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7461,6 +7780,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7492,6 +7812,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7523,6 +7844,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7554,6 +7876,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7585,6 +7908,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7625,6 +7949,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7659,6 +7984,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7690,6 +8016,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 suggestion_id: number;
@@ -7723,6 +8050,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 suggestion_id: number;
@@ -7756,6 +8084,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 message_id: number;
@@ -7793,6 +8122,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 message_id: number;
@@ -7826,6 +8156,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7857,6 +8188,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7888,6 +8220,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7919,6 +8252,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7957,6 +8291,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7988,6 +8323,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 job_id: number;
@@ -8021,6 +8357,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 name: string;
@@ -8054,6 +8391,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 name: string;
@@ -8091,6 +8429,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 job_id: number;
@@ -8124,6 +8463,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -8157,6 +8497,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -8197,6 +8538,7 @@ export interface operations {
             };
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -8230,6 +8572,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -8267,6 +8610,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -8300,6 +8644,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 application_id: number;
@@ -8337,6 +8682,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 round_id: number;
@@ -8368,6 +8714,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "x-joborbit-session"?: string | null;
             };
             path: {
                 round_id: number;

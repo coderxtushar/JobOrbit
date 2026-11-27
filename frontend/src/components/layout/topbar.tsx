@@ -14,6 +14,8 @@ import {
   Sun,
   Target,
   Layers,
+  LogOut,
+  Trash2,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import Link from "next/link";
@@ -22,7 +24,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { OrbitMark, Wordmark } from "@/components/brand/orbit-mark";
 import { NavLinks } from "@/components/navigation/nav-links";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +40,7 @@ import { api } from "@/lib/api/endpoints";
 import { NAVIGATION, navItemFor } from "@/lib/constants/navigation";
 
 import { useCommandPalette } from "./command-palette";
+import { DeleteAccountDialog } from "./delete-account-dialog";
 import { NotificationCenter } from "./notification-center";
 
 function Breadcrumbs() {
@@ -87,7 +90,10 @@ function ThemeToggle() {
 
 function ProfileMenu() {
   const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile });
-  const name = profile.data?.full_name?.trim() || "Your profile";
+  const account = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 5 * 60_000 });
+  const [deleting, setDeleting] = useState(false);
+  const hosted = account.data?.auth_mode === "google";
+  const name = profile.data?.full_name?.trim() || account.data?.name || "Your profile";
   const initials =
     name
       .split(/\s+/)
@@ -104,6 +110,9 @@ function ProfileMenu() {
           aria-label="Profile menu"
         >
           <Avatar className="size-8 ring-1 ring-line-strong">
+            {hosted && account.data?.picture_url ? (
+              <AvatarImage src={account.data.picture_url} alt="" referrerPolicy="no-referrer" />
+            ) : null}
             <AvatarFallback className="bg-gradient-to-br from-violet/30 to-cyan/20 text-[11px] font-semibold text-text-1">
               {initials}
             </AvatarFallback>
@@ -113,7 +122,9 @@ function ProfileMenu() {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <p className="truncate text-sm font-medium text-text-1">{name}</p>
-          <p className="truncate text-xs text-text-3">{profile.data?.headline || profile.data?.email || "Local workspace"}</p>
+          <p className="truncate text-xs text-text-3">
+            {hosted ? account.data?.email : profile.data?.headline || profile.data?.email || "Local workspace"}
+          </p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
@@ -126,7 +137,26 @@ function ProfileMenu() {
             <Settings /> Settings
           </Link>
         </DropdownMenuItem>
+        {hosted ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              {/* POST, so a link elsewhere cannot sign anyone out. */}
+              <form action="/api/auth/signout" method="post" className="w-full">
+                <button type="submit" className="flex w-full items-center gap-2">
+                  <LogOut /> Sign out
+                </button>
+              </form>
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+              <Trash2 /> Delete account
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
+      {hosted && account.data ? (
+        <DeleteAccountDialog email={account.data.email} open={deleting} onOpenChange={setDeleting} />
+      ) : null}
     </DropdownMenu>
   );
 }

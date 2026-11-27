@@ -7,11 +7,12 @@ import { HomeMotion } from "./primitives";
 import { SafetyDiagram } from "./safety-diagram";
 import { TrackingShowcase } from "./tracking-showcase";
 
-export function HomePage() {
+/** ``signInFirst``: a sign-in site and a signed-out visitor, so the nav offers "Sign in". */
+export function HomePage({ signInFirst = false }: { signInFirst?: boolean }) {
   return (
     <HomeMotion>
       <div className="home-fx relative min-h-svh bg-background text-text-1">
-        <HomeNav />
+        <HomeNav signInFirst={signInFirst} />
         <main id="main" className="overflow-x-clip">
           <Hero />
           <PipelineOrbit />

@@ -95,7 +95,17 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if ((error as Error).name === "AbortError") throw error;
     throw new ApiError("The JobOrbit dashboard server is not reachable.", 0, "backend_unreachable");
   }
-  if (!response.ok) throw await toError(response);
+  if (!response.ok) {
+    const error = await toError(response);
+    // A session that expired or was signed out elsewhere: go and sign in, then come back.
+    if (error.code === "signin_required" && typeof window !== "undefined") {
+      const here = `${window.location.pathname}${window.location.search}`;
+      // A full load on purpose: this runs outside React, and cached data is stale anyway.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign(`/signin?next=${encodeURIComponent(here)}`);
+    }
+    throw error;
+  }
   if (raw) return response as unknown as T;
   if (response.status === 204) return undefined as T;
   const text = await response.text();
