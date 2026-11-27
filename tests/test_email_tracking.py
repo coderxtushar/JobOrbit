@@ -855,9 +855,9 @@ def test_a_disabled_gmail_api_says_how_to_enable_it_and_revokes_the_grant(
 
 
 def test_other_gmail_errors_carry_googles_reason(tracking_enabled: None, session: Session) -> None:
-    body = {"error": {"code": 429, "message": "Quota exceeded for quota metric 'Queries'."}}
-    google = FakeGoogle(profile_error=(429, body))
-    with pytest.raises(GmailError, match=r"HTTP 429: Quota exceeded"):
+    body = {"error": {"code": 400, "message": "Precondition check failed."}}
+    google = FakeGoogle(profile_error=(400, body))
+    with pytest.raises(GmailError, match=r"HTTP 400: Precondition check failed"):
         _connect(session, google)
 
 

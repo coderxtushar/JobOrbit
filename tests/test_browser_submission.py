@@ -45,7 +45,7 @@ from app.submission.browser_ats import (
 )
 from app.submission.forms import AnswerValue
 from app.submission.registry import ASHBY, GREENHOUSE, LEVER
-from tests.conftest import make_pdf, persist_job
+from tests.conftest import make_pdf, persist_job, sqlite_only
 from tests.support.ats_forms import FormServer
 
 IDENTITY = CandidateIdentity(
@@ -418,6 +418,7 @@ def test_a_dry_run_fills_the_form_and_saves_a_screenshot_without_submitting(
 # --------------------------------------------------------------------------------------
 
 
+@sqlite_only
 def test_a_run_asks_the_new_question_then_applies_after_it_is_answered(
     browser,
     forms,

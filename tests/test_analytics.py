@@ -191,7 +191,7 @@ def test_interview_and_offer_counts_read_the_outcome_field_not_the_status(
     application = Application(
         job_id=job.id,
         profile_id=profile.id,
-        platform="manual_json",
+        platform="manual",
         outcome=Outcome.INTERVIEWING,
     )
     session.add(application)

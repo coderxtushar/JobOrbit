@@ -141,7 +141,7 @@ def test_a_submitted_application_is_told_a_click_is_not_a_confirmation(
     application = Application(
         job_id=1,
         profile_id=profile.id,
-        platform="manual_json",
+        platform="manual",
         status=ApplicationStatus.SUBMITTED,
     )
 
@@ -156,7 +156,7 @@ def test_a_confirmed_application_asks_for_the_outcome_not_another_submission(
     application = Application(
         job_id=1,
         profile_id=profile.id,
-        platform="manual_json",
+        platform="manual",
         status=ApplicationStatus.CONFIRMED,
     )
 
@@ -169,9 +169,7 @@ def test_no_application_status_produces_an_empty_next_action(profile: CandidateP
     from app.db.models import Application
 
     for status in ApplicationStatus:
-        application = Application(
-            job_id=1, profile_id=profile.id, platform="manual_json", status=status
-        )
+        application = Application(job_id=1, profile_id=profile.id, platform="manual", status=status)
         assert next_action(application).strip(), f"{status.value} has no stated next action"
 
 

@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings==2.7.1",
     "SQLAlchemy==2.0.37",
     "alembic==1.14.1",
+    "psycopg[binary]==3.3.9",
     "APScheduler==3.11.0",
     "requests==2.34.2",
     "httpx==0.28.1",
@@ -23,7 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 # Optional. The application is fully functional without these.
 llm = ["openai>=1.59.0"]
-dev = ["pytest==8.3.4", "pytest-cov==6.0.0"]
+dev = ["pytest==8.3.4", "pytest-cov==6.0.0", "pytest-timeout==2.4.0"]
 
 [build-system]
 requires = ["setuptools>=68"]

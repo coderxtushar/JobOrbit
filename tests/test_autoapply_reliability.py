@@ -42,7 +42,7 @@ from app.services.autoapply_resolution import ResolutionError, resolve
 from app.services.preflight import run_preflight
 from app.services.redaction import mask_value, redact
 from app.submission.local_test import LocalTestSubmissionAdapter
-from tests.conftest import persist_job
+from tests.conftest import persist_job, sqlite_only
 from tests.support.application_server import TestApplicationServer
 from tests.test_demo_mode import demo_client  # noqa: F401 - fixture
 from tests.test_submission_engine import (  # noqa: F401 - fixtures are used by name
@@ -274,6 +274,7 @@ def test_an_expired_lock_is_taken_over_and_released(
     assert session.get(JobLock, job.id) is None, "the lock must be released after the attempt"
 
 
+@sqlite_only
 def test_a_job_the_user_submitted_by_hand_meanwhile_is_not_sent_again(
     configured: TestApplicationServer,
     session: Session,

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -148,7 +148,8 @@ class SavedAnswerRepository:
             select(
                 ApplicationAnswer.question_key,
                 func.min(ApplicationAnswer.question),
-                func.max(ApplicationAnswer.is_sensitive),
+                # max() over a boolean is SQLite-only; Postgres needs it as a number.
+                func.max(case((ApplicationAnswer.is_sensitive.is_(True), 1), else_=0)),
                 func.count(ApplicationAnswer.id),
             )
             .join(Application, Application.id == ApplicationAnswer.application_id)
