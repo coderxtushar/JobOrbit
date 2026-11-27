@@ -117,7 +117,7 @@ def build_analytics(
 
     jobs_total = sum(jobs.status_counts().values())
     scored = matches.scored_count(profile.id)
-    duplication = analyse_duplication(session, suspect_limit=suspect_limit)
+    duplication = analyse_duplication(session, suspect_limit=suspect_limit, profile_id=profile.id)
 
     max_age = profile.max_job_age_days or 0
     freshness = jobs.freshness_counts(now - timedelta(days=max_age or 30))
@@ -147,9 +147,9 @@ def build_analytics(
         max_job_age_days=max_age or 30,
     )
 
-    status_counts = applications.status_counts()
-    outcome_counts = applications.outcome_counts()
-    waiting = applications.oldest_waiting()
+    status_counts = applications.status_counts(profile.id)
+    outcome_counts = applications.outcome_counts(profile.id)
+    waiting = applications.oldest_waiting(profile.id)
     oldest_days: float | None = None
     if waiting is not None:
         reference = waiting.prepared_at or waiting.created_at
@@ -159,7 +159,11 @@ def build_analytics(
         applications_by_status=status_counts,
         applications_by_outcome=outcome_counts,
         applications_by_source=dict(
-            sorted(applications.counts_by_source().items(), key=lambda item: item[1], reverse=True)
+            sorted(
+                applications.counts_by_source(profile.id).items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
         ),
         prepared=sum(status_counts.values()),
         marked_submitted=status_counts.get("SUBMITTED", 0) + status_counts.get("CONFIRMED", 0),

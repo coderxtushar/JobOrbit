@@ -63,7 +63,7 @@ from app.db.models import (
     SubmissionState,
     utcnow,
 )
-from app.db.repositories import AuditRepository, ProfileRepository, SavedAnswerRepository
+from app.db.repositories import AuditRepository, SavedAnswerRepository
 from app.llm.base import LLMProvider
 from app.logging_conf import get_logger
 from app.services.application_prep import ApplicationPreparationService, profile_facts
@@ -433,7 +433,10 @@ class AutoApplyService:
             run.status = BatchStatus.RUNNING
             run.pause_requested = False
             run.heartbeat_at = utcnow()
-            profile = ProfileRepository(session).get_or_create_default()
+            # The run's own owner: never "the default", which in hosted mode is somebody else.
+            profile = session.get(CandidateProfile, run.profile_id)
+            if profile is None:
+                raise LookupError(f"run {run_id} has no profile")
             plan = run_preflight(session, profile, targets, exclude_run_id=run_id)
             run.discovered_count = plan.counts.total_discovered
             run.eligible_count = len(plan.queue_job_ids)
@@ -665,7 +668,14 @@ class AutoApplyService:
             if attempt is None:
                 return False
             job = session.get(Job, attempt.job_id)
-            profile = ProfileRepository(session).get_or_create_default()
+            owner_run = session.get(AutoApplyRun, attempt.autoapply_run_id)
+            profile = (
+                session.get(CandidateProfile, owner_run.profile_id)
+                if owner_run is not None
+                else None
+            )
+            if profile is None:
+                return False
             if job is None:
                 attempt.state = SubmissionState.FAILED
                 attempt.failure_category = FailureCategory.FORM_CHANGED

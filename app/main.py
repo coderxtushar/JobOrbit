@@ -12,6 +12,7 @@ from app.api.errors import register_error_handlers
 from app.api.routes import (
     answers,
     applications,
+    auth,
     autoapply,
     batches,
     capture,
@@ -158,6 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(auth.router)
     app.include_router(profile.router)
     app.include_router(resumes.router)
     app.include_router(jobs.router)

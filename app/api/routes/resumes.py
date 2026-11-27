@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, File, Form, UploadFile, status
 
 from app.api.deps import AppSettings, Authorized, DbSession, Profile, refuse_in_demo_mode
@@ -54,7 +56,9 @@ def upload_resume(
     """
     refuse_in_demo_mode(settings, "resume_upload")
     payload = file.file.read()
-    stored = store_resume(file.filename or "resume", payload, settings)
+    stored = store_resume(
+        file.filename or "resume", payload, settings, keep_file=not settings.is_multi_user
+    )
 
     existing = ResumeRepository(session).find_by_hash(profile.id, stored.sha256)
     if existing is not None:
@@ -72,7 +76,7 @@ def upload_resume(
             profile_id=profile.id,
             label=label.strip()[:200] or "base",
             original_filename=stored.original_filename,
-            stored_path=str(stored.path),
+            stored_path=str(stored.path) if stored.path != Path() else "",
             content_type=stored.content_type,
             file_size_bytes=stored.size_bytes,
             sha256=stored.sha256,

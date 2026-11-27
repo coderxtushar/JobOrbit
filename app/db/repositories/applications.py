@@ -112,47 +112,53 @@ class ApplicationRepository:
         statement = self._apply_filters(select(func.count(Application.id)), query)
         return int(self._session.scalar(statement) or 0)
 
-    def status_counts(self) -> dict[str, int]:
+    def status_counts(self, profile_id: int) -> dict[str, int]:
         rows = self._session.execute(
-            select(Application.status, func.count(Application.id)).group_by(Application.status)
+            select(Application.status, func.count(Application.id))
+            .where(Application.profile_id == profile_id)
+            .group_by(Application.status)
         ).all()
         return {status.value: count for status, count in rows}
 
-    def outcome_counts(self) -> dict[str, int]:
+    def outcome_counts(self, profile_id: int) -> dict[str, int]:
         rows = self._session.execute(
-            select(Application.outcome, func.count(Application.id)).group_by(Application.outcome)
+            select(Application.outcome, func.count(Application.id))
+            .where(Application.profile_id == profile_id)
+            .group_by(Application.outcome)
         ).all()
         return {outcome.value: count for outcome, count in rows}
 
-    def counts_by_source(self) -> dict[str, int]:
+    def counts_by_source(self, profile_id: int) -> dict[str, int]:
         """Applications per source of the job they were prepared for."""
         rows = self._session.execute(
             select(JobSourceReference.source, func.count(func.distinct(Application.id)))
             .join(JobSourceReference, JobSourceReference.job_id == Application.job_id)
+            .where(Application.profile_id == profile_id)
             .group_by(JobSourceReference.source)
         ).all()
         return {source.value: count for source, count in rows}
 
-    def oldest_waiting(self) -> Application | None:
+    def oldest_waiting(self, profile_id: int) -> Application | None:
         """The application that has sat in the review queue longest."""
         return self._session.scalars(
             select(Application)
             .where(
+                Application.profile_id == profile_id,
                 Application.status.in_(
                     [ApplicationStatus.READY_FOR_REVIEW, ApplicationStatus.APPROVED]
-                )
+                ),
             )
             .order_by(Application.prepared_at.asc(), Application.created_at.asc())
             .limit(1)
         ).first()
 
-    def status_counts_for_sources(self, sources: SourceNameList) -> dict[str, int]:
+    def status_counts_for_sources(self, sources: SourceNameList, profile_id: int) -> dict[str, int]:
         if not sources:
             return {}
         rows = self._session.execute(
             select(Application.status, func.count(func.distinct(Application.id)))
             .join(JobSourceReference, JobSourceReference.job_id == Application.job_id)
-            .where(JobSourceReference.source.in_(sources))
+            .where(JobSourceReference.source.in_(sources), Application.profile_id == profile_id)
             .group_by(Application.status)
         ).all()
         return {status.value: count for status, count in rows}

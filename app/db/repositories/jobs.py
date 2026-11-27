@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, case, func, or_, select
-from sqlalchemy.orm import Session, defer, lazyload
+from sqlalchemy import ColumnElement, Select, and_, case, exists, func, or_, select
+from sqlalchemy.orm import Session, aliased, defer, lazyload
 
 from app.db.models import (
     Application,
@@ -19,6 +19,7 @@ from app.db.models import (
     JobMatch,
     JobSourceReference,
     JobStatus,
+    JobUserState,
     SourceName,
     utcnow,
 )
@@ -46,6 +47,58 @@ class JobQuery:
     descending: bool = True
     limit: int = 25
     offset: int = 0
+
+
+def effective_status(job: Job, match: JobMatch | None, user_state: str | None) -> JobStatus:
+    """The status one person sees: global facts, then their own mark, then their match.
+
+    ``Job.status`` is shared, so it can only carry what is true for everyone (duplicate,
+    archived). A shortlist or skip is one person's (:class:`JobUserState`), and so is
+    whether the listing passed their filters (their :class:`JobMatch`).
+    """
+    if job.status is JobStatus.DUPLICATE:
+        return JobStatus.DUPLICATE
+    if user_state == "shortlisted":
+        return JobStatus.SHORTLISTED
+    if user_state == "skipped":
+        return JobStatus.SKIPPED
+    if job.status is JobStatus.EXPIRED:
+        return JobStatus.EXPIRED
+    if match is not None:
+        return JobStatus.FILTERED_OUT if match.filtered_out else JobStatus.SCORED
+    return JobStatus.DISCOVERED
+
+
+def _status_is(status: JobStatus, profile_id: int) -> ColumnElement[bool]:
+    """SQL twin of :func:`effective_status` for one status and one profile."""
+    # Aliased and correlated to ``Job`` only: the score sort joins ``job_match`` into the
+    # outer query, and an unaliased subquery would silently correlate to that join.
+    state_row = aliased(JobUserState)
+    match_row = aliased(JobMatch)
+    mark = (
+        select(state_row.id)
+        .where(state_row.job_id == Job.id, state_row.profile_id == profile_id)
+        .correlate(Job)
+    )
+    match = (
+        select(match_row.id)
+        .where(match_row.job_id == Job.id, match_row.profile_id == profile_id)
+        .correlate(Job)
+    )
+    not_duplicate = Job.status != JobStatus.DUPLICATE
+    if status is JobStatus.DUPLICATE:
+        return Job.status == JobStatus.DUPLICATE
+    if status in (JobStatus.SHORTLISTED, JobStatus.SKIPPED):
+        return and_(not_duplicate, exists(mark.where(state_row.state == status.value.lower())))
+    unmarked = and_(not_duplicate, ~exists(mark))
+    if status is JobStatus.EXPIRED:
+        return and_(unmarked, Job.status == JobStatus.EXPIRED)
+    live = and_(unmarked, Job.status != JobStatus.EXPIRED)
+    if status is JobStatus.FILTERED_OUT:
+        return and_(live, exists(match.where(match_row.filtered_out.is_(True))))
+    if status is JobStatus.SCORED:
+        return and_(live, exists(match.where(match_row.filtered_out.is_(False))))
+    return and_(live, ~exists(match))
 
 
 def light_jobs_query() -> Select[tuple[Job]]:
@@ -158,6 +211,28 @@ class JobRepository:
         self._session.flush()
         return job
 
+    # ---------------- per-person marks ----------------
+
+    def user_state(self, job_id: int, profile_id: int) -> str | None:
+        """``shortlisted``, ``skipped`` or ``None`` for one person's view of a job."""
+        return self._session.scalar(
+            select(JobUserState.state).where(
+                JobUserState.job_id == job_id, JobUserState.profile_id == profile_id
+            )
+        )
+
+    def set_user_state(self, job_id: int, profile_id: int, state: str) -> None:
+        row = self._session.scalars(
+            select(JobUserState).where(
+                JobUserState.job_id == job_id, JobUserState.profile_id == profile_id
+            )
+        ).first()
+        if row is None:
+            self._session.add(JobUserState(job_id=job_id, profile_id=profile_id, state=state))
+        else:
+            row.state = state
+        self._session.flush()
+
     def mark_expired_before(self, cutoff: datetime) -> int:
         """Mark listings whose posting date is older than ``cutoff`` as expired.
 
@@ -165,12 +240,18 @@ class JobRepository:
         person chose to keep: a shortlisted job, or one with an application.
         """
         has_application = select(Application.id).where(Application.job_id == Job.id).exists()
+        shortlisted = (
+            select(JobUserState.id)
+            .where(JobUserState.job_id == Job.id, JobUserState.state == "shortlisted")
+            .exists()
+        )
         jobs = self._session.scalars(
             select(Job).where(
                 Job.posted_at.is_not(None),
                 Job.posted_at < cutoff,
                 Job.status.not_in([JobStatus.EXPIRED, JobStatus.DUPLICATE, JobStatus.SHORTLISTED]),
                 ~has_application,
+                ~shortlisted,
             )
         ).all()
         for job in jobs:
@@ -184,7 +265,12 @@ class JobRepository:
         if not query.include_duplicates:
             statement = statement.where(Job.duplicate_of_id.is_(None))
         if query.statuses:
-            statement = statement.where(Job.status.in_(query.statuses))
+            if query.profile_id is None:
+                statement = statement.where(Job.status.in_(query.statuses))
+            else:
+                statement = statement.where(
+                    or_(*(_status_is(status, query.profile_id) for status in query.statuses))
+                )
         elif not query.include_expired:
             statement = statement.where(Job.status != JobStatus.EXPIRED)
         if query.company:

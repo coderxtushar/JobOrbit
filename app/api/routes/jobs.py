@@ -22,6 +22,7 @@ from app.db.repositories import (
     MatchRepository,
     SourceConfigRepository,
 )
+from app.db.repositories.jobs import effective_status
 from app.schemas.common import ActionResult, Page
 from app.schemas.job import (
     DiscoverRequest,
@@ -53,13 +54,15 @@ def to_job_read(job, session, profile_id: int, *, detail: bool = False) -> JobRe
     has_application = ApplicationRepository(session).find_for_job(job.id, profile_id) is not None
     model_class = JobDetail if detail else JobRead
     model = model_class.model_validate(job)
+    jobs = JobRepository(session)
     return model.model_copy(
         update={
+            "status": effective_status(job, match, jobs.user_state(job.id, profile_id)),
             "source_references": [
                 SourceReferenceRead.model_validate(reference) for reference in job.source_references
             ],
             "match": MatchRead.model_validate(match) if match is not None else None,
-            "duplicate_count": len(JobRepository(session).duplicates_of(job.id)),
+            "duplicate_count": len(jobs.duplicates_of(job.id)),
             "has_application": has_application,
         }
     )
@@ -360,7 +363,7 @@ def shortlist_job(job_id: int, session: DbSession, profile: Profile) -> ActionRe
             status.HTTP_409_CONFLICT,
         )
 
-    repository.set_status(job, JobStatus.SHORTLISTED)
+    repository.set_user_state(job.id, profile.id, "shortlisted")
     AuditRepository(session).record(
         "job.shortlisted", entity_type="job", entity_id=job.id, detail={"title": job.title[:120]}
     )
@@ -379,7 +382,7 @@ def skip_job(
     if job is None:
         raise ApiError("not_found", f"job {job_id} was not found", status.HTTP_404_NOT_FOUND)
 
-    repository.set_status(job, JobStatus.SKIPPED)
+    repository.set_user_state(job.id, profile.id, "skipped")
     AuditRepository(session).record(
         "job.skipped", entity_type="job", entity_id=job.id, detail={"reason": reason[:300]}
     )

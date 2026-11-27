@@ -221,9 +221,10 @@ def analytics(
 )
 def duplication(
     session: DbSession,
+    profile: Profile,
     suspect_limit: Annotated[int, Query(ge=1, le=200)] = 25,
 ) -> DuplicationReportRead:
-    report = analyse_duplication(session, suspect_limit=suspect_limit)
+    report = analyse_duplication(session, suspect_limit=suspect_limit, profile_id=profile.id)
     return DuplicationReportRead(
         jobs_total=report.jobs_total,
         sightings_total=report.sightings_total,

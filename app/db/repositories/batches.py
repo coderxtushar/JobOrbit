@@ -58,25 +58,40 @@ class BatchRunRepository:
         self._session.flush()
         return run
 
-    def get(self, run_id: int) -> BatchRun | None:
-        return self._session.get(BatchRun, run_id)
+    def get(self, run_id: int, profile_id: int | None = None) -> BatchRun | None:
+        """The run; with ``profile_id``, only if it is that profile's (else ``None``)."""
+        run = self._session.get(BatchRun, run_id)
+        if run is not None and profile_id is not None and run.profile_id != profile_id:
+            return None
+        return run
 
-    def list(self, *, limit: int = 20, offset: int = 0) -> BatchRunList:
+    def list(self, profile_id: int, *, limit: int = 20, offset: int = 0) -> BatchRunList:
         return list(
             self._session.scalars(
-                select(BatchRun).order_by(BatchRun.started_at.desc()).limit(limit).offset(offset)
+                select(BatchRun)
+                .where(BatchRun.profile_id == profile_id)
+                .order_by(BatchRun.started_at.desc())
+                .limit(limit)
+                .offset(offset)
             ).unique()
         )
 
-    def count(self) -> int:
-        return int(self._session.scalar(select(func.count(BatchRun.id))) or 0)
+    def count(self, profile_id: int) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count(BatchRun.id)).where(BatchRun.profile_id == profile_id)
+            )
+            or 0
+        )
 
-    def active(self) -> BatchRun | None:
-        return self._session.scalars(
-            select(BatchRun)
-            .where(BatchRun.status.in_([BatchStatus.RUNNING, BatchStatus.CANCELLING]))
-            .order_by(BatchRun.started_at.desc())
-        ).first()
+    def active(self, profile_id: int | None = None) -> BatchRun | None:
+        """The running batch; with ``profile_id``, that profile's (one at a time each)."""
+        statement = select(BatchRun).where(
+            BatchRun.status.in_([BatchStatus.RUNNING, BatchStatus.CANCELLING])
+        )
+        if profile_id is not None:
+            statement = statement.where(BatchRun.profile_id == profile_id)
+        return self._session.scalars(statement.order_by(BatchRun.started_at.desc())).first()
 
     def add_items(self, run: BatchRun, job_ids: JobIdList) -> BatchItemList:
         """Queue jobs, ignoring any already recorded in this run."""

@@ -252,12 +252,52 @@ def _enum_column(enum_cls: type[enum.Enum], **kwargs: Any) -> Any:
 # --------------------------------------------------------------------------------------
 
 
+class User(Base):
+    """A person who signed in with Google (hosted mode only).
+
+    A local install has no rows here: its single profile has ``user_id`` NULL and every
+    request acts as that local owner. Named ``app_user`` because ``user`` is reserved in
+    Postgres.
+    """
+
+    __tablename__ = "app_user"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: Google's stable subject id. Emails can change; ``sub`` cannot.
+    google_sub: Mapped[str] = mapped_column(String(255), unique=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    picture_url: Mapped[str] = mapped_column(String(1000), default="")
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+
+class UserSession(Base):
+    """A signed-in browser. Only the SHA-256 of the token is stored, so a copy of the
+    database cannot be replayed as a session."""
+
+    __tablename__ = "user_session"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    user_agent: Mapped[str] = mapped_column(String(300), default="")
+
+
 class CandidateProfile(Base):
     """The user's verified preferences and facts. Edited only by the user."""
 
     __tablename__ = "candidate_profile"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: The signed-in owner in hosted mode; NULL for the local install's single profile.
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), unique=True, default=None
+    )
     full_name: Mapped[str] = mapped_column(String(200), default="")
     email: Mapped[str] = mapped_column(String(320), default="")
     phone: Mapped[str] = mapped_column(String(50), default="")
@@ -857,6 +897,30 @@ class BatchRunItem(Base):
     __table_args__ = (
         UniqueConstraint("batch_run_id", "job_id", name="uq_batch_item_run_job"),
         Index("ix_batch_item_run_status", "batch_run_id", "status"),
+    )
+
+
+class JobUserState(Base):
+    """One person's mark on a shared job: shortlisted or skipped.
+
+    Kept off ``Job.status`` because jobs are shared between profiles: one person
+    skipping a listing must not hide it from anyone else.
+    """
+
+    __tablename__ = "job_user_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("candidate_profile.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[int] = mapped_column(ForeignKey("job.id", ondelete="CASCADE"), index=True)
+    #: ``shortlisted`` or ``skipped``.
+    state: Mapped[str] = mapped_column(String(20))
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("profile_id", "job_id", name="uq_job_user_state"),
+        CheckConstraint("state IN ('shortlisted', 'skipped')", name="ck_job_user_state"),
     )
 
 

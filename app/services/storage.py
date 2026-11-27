@@ -80,19 +80,29 @@ def _validate(filename: str, payload: bytes, settings: Settings) -> str:
     return extension
 
 
-def store_resume(filename: str, payload: bytes, settings: Settings | None = None) -> StoredFile:
-    """Validate and write an uploaded resume into the private resume directory."""
+def store_resume(
+    filename: str, payload: bytes, settings: Settings | None = None, *, keep_file: bool = True
+) -> StoredFile:
+    """Validate an uploaded resume and, unless ``keep_file`` is off, write it privately.
+
+    Hosted mode turns ``keep_file`` off: the parsed fields are what JobOrbit uses there,
+    the host's disk is wiped on restart anyway, and a file never written cannot leak.
+    The returned ``path`` is then empty.
+    """
     settings = settings or get_settings()
     settings.ensure_directories()
     extension = _validate(filename, payload, settings)
 
     digest = hashlib.sha256(payload).hexdigest()
     target = settings.resume_dir / f"{safe_stem(filename)}-{digest[:12]}{extension}"
-    target.write_bytes(payload)
-    try:
-        target.chmod(0o600)
-    except OSError:  # pragma: no cover - platform dependent
-        pass
+    if keep_file:
+        target.write_bytes(payload)
+        try:
+            target.chmod(0o600)
+        except OSError:  # pragma: no cover - platform dependent
+            pass
+    else:
+        target = Path()
 
     content_type = (
         "application/pdf"

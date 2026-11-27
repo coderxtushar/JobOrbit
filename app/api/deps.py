@@ -12,13 +12,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.errors import ApiError
 from app.config import Settings, get_settings
 from app.db.base import get_session_factory
-from app.db.models import CandidateProfile
+from app.db.models import CandidateProfile, User
 from app.db.repositories import ProfileRepository
 from app.llm.base import LLMProvider
 from app.llm.factory import build_provider
 from app.services.demo_sessions import get_store as get_demo_store
 
 DEMO_SESSION_HEADER = "X-Demo-Session"
+#: Set by the website's server from its httpOnly cookie; never by page script.
+SESSION_HEADER = "X-JobOrbit-Session"
 
 
 def _demo_session_factory(request: Request, settings: Settings) -> sessionmaker[Session] | None:
@@ -69,15 +71,7 @@ def get_app_settings() -> Settings:
     return get_settings()
 
 
-def require_auth(
-    settings: Annotated[Settings, Depends(get_app_settings)],
-    authorization: Annotated[str | None, Header()] = None,
-) -> None:
-    """Enforce a bearer token whenever one is configured.
-
-    A token is mandatory when the API is not bound to loopback (enforced in
-    :class:`~app.config.Settings`), and optional but honoured when it is.
-    """
+def _check_service_token(settings: Settings, authorization: str | None) -> None:
     if not settings.api_token:
         return
     expected = f"Bearer {settings.api_token}"
@@ -89,12 +83,256 @@ def require_auth(
         )
 
 
-def get_profile(session: Annotated[Session, Depends(get_db)]) -> CandidateProfile:
-    """The single local user's profile, created on first use."""
-    return ProfileRepository(session).get_or_create_default()
+def require_auth(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    session: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_joborbit_session: Annotated[str | None, Header()] = None,
+) -> None:
+    """Enforce the service token, and in hosted mode a signed-in user and route policy.
+
+    The bearer token proves the caller is the website's server (mandatory off loopback,
+    enforced in :class:`~app.config.Settings`). In ``google`` mode that is not enough: the
+    request must also carry a session created from a verified Google sign-in, and the
+    route must be one a signed-in user may call (:data:`HOSTED_POLICY`).
+    """
+    _check_service_token(settings, authorization)
+    if not settings.is_multi_user:
+        return
+    endpoint = _endpoint_name(request)
+    if endpoint in HOSTED_OPEN:
+        return
+    from app.services.accounts import user_for_session
+
+    user = user_for_session(session, x_joborbit_session or "")
+    if user is None:
+        raise ApiError("signin_required", "Sign in to use JobOrbit.", status.HTTP_401_UNAUTHORIZED)
+    request.state.user = user
+    policy = HOSTED_POLICY.get(endpoint)
+    if policy is None:  # pragma: no cover - the guard test keeps this unreachable
+        raise ApiError("forbidden", "This action is not available.", status.HTTP_403_FORBIDDEN)
+    if policy == "admin" and user.email.lower() not in settings.admin_email_set:
+        raise ApiError(
+            "admin_only",
+            "Only the people who run this JobOrbit installation can do that.",
+            status.HTTP_403_FORBIDDEN,
+        )
+    if policy == "blocked":
+        raise ApiError(
+            f"hosted_{endpoint}_unavailable",
+            HOSTED_BLOCKED_REASONS[_HOSTED_BLOCKED_GROUP[endpoint]],
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+def _endpoint_name(request: Request) -> str:
+    endpoint = request.scope.get("endpoint")
+    return getattr(endpoint, "__name__", "")
+
+
+def current_user(request: Request) -> User | None:
+    """The signed-in user in hosted mode (set by :func:`require_auth`); ``None`` locally."""
+    return getattr(request.state, "user", None)
+
+
+def get_profile(
+    request: Request,
+    session: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> CandidateProfile:
+    """The profile this request acts for.
+
+    Locally that is the single local owner's profile, created on first use. In hosted
+    mode it is the signed-in user's own profile; there is no default to fall back to, so
+    a route that forgot :data:`Authorized` fails closed instead of serving someone else.
+    """
+    if not settings.is_multi_user:
+        return ProfileRepository(session).get_or_create_default()
+    user = current_user(request)
+    if user is None:
+        raise ApiError("signin_required", "Sign in to use JobOrbit.", status.HTTP_401_UNAUTHORIZED)
+    from app.services.accounts import profile_for
+
+    return profile_for(session, user)
+
+
+#: Hosted (google) mode route policy, by endpoint function name:
+#:
+#: * ``personal`` — any signed-in user; the route acts only on their own profile.
+#: * ``admin`` — installation-wide actions, for the emails in ``JA_ADMIN_EMAILS``.
+#: * ``blocked`` — cannot work for a hosted user at all; the reason says why.
+#:
+#: ``tests/test_accounts.py`` fails if a route is in neither this map nor
+#: :data:`HOSTED_OPEN`, so a new endpoint cannot ship without a decision.
+HOSTED_OPEN: frozenset[str] = frozenset({"health", "create_session", "gmail_oauth_callback"})
+
+HOSTED_BLOCKED_REASONS: dict[str, str] = {
+    "browser_autoapply": (
+        "Auto-apply fills forms in a Chrome window on your own computer, where you can "
+        "solve a CAPTCHA or type a code. The hosted site has no such window, so runs are "
+        "local-only for now. The preflight still shows what a run would do."
+    ),
+    "email": (
+        "Reading Gmail from a public app needs Google's security assessment for the "
+        "restricted Gmail scope, so email tracking is available in a local install only."
+    ),
+    "capture": (
+        "The capture extension sends pages to a JobOrbit running on your own computer, "
+        "so it is available in a local install only."
+    ),
+}
+
+_HOSTED_BLOCKED_GROUP: dict[str, str] = {
+    **{
+        name: "browser_autoapply"
+        for name in (
+            "start_run",
+            "resume_run",
+            "attempt_evidence",
+            "recheck_attempt",
+            "resolve_attempt",
+        )
+    },
+    **{
+        name: "email"
+        for name in (
+            "email_tracking_status",
+            "gmail_connect_url",
+            "sync_email",
+            "ingest_email",
+            "list_email_messages",
+            "list_status_suggestions",
+            "accept_status_suggestion",
+            "dismiss_status_suggestion",
+            "link_email_message",
+            "dismiss_email_message",
+            "disconnect_email",
+            "delete_email_data",
+        )
+    },
+    **{name: "capture" for name in ("capture_status", "capture_job")},
+}
+
+_HOSTED_ADMIN: frozenset[str] = frozenset(
+    {
+        "import_jobs",
+        "import_jobs_csv",
+        "discover_jobs",
+        "update_source",
+        "emergency_stop",
+        "clear_emergency_stop",
+        "reset_circuit",
+        "cleanup_evidence",
+        "diagnostics",
+        "audit_logs",
+        "refresh_company_research",
+    }
+)
+
+_HOSTED_PERSONAL: frozenset[str] = frozenset(
+    {
+        # account
+        "read_me",
+        "delete_session",
+        "delete_my_account",
+        # profile and resumes
+        "read_profile",
+        "update_profile",
+        "complete_onboarding",
+        "upload_resume",
+        "list_resumes",
+        "read_resume",
+        "read_parsed",
+        "set_primary",
+        "list_variants",
+        "create_variant",
+        # jobs (shared listings, per-user matches and marks)
+        "score_jobs",
+        "list_jobs",
+        "read_job",
+        "explain_job",
+        "shortlist_job",
+        "skip_job",
+        # applications
+        "prepare_application",
+        "list_applications",
+        "read_application",
+        "record_opened",
+        "update_application",
+        "list_artifacts",
+        "regenerate_application",
+        # bulk preparation
+        "preview_batch",
+        "start_batch",
+        "list_batches",
+        "get_batch",
+        "cancel_batch",
+        "resume_batch",
+        # auto-apply planning (runs themselves are blocked above)
+        "submission_capabilities",
+        "preview_run",
+        "list_runs",
+        "get_run",
+        "pause_run",
+        "cancel_run",
+        "run_report",
+        "preflight_run",
+        "read_preferences",
+        "save_preferences",
+        "control_status",
+        "get_attempt",
+        # answers, platforms, searches
+        "list_answers",
+        "action_inbox",
+        "save_answer",
+        "delete_answer",
+        "list_platforms",
+        "read_platform",
+        "list_searches",
+        "create_search",
+        "update_search",
+        "delete_search",
+        "preview_search",
+        "run_search",
+        # sources (read-only for users) and analytics over their own data
+        "list_sources",
+        "metrics",
+        "estimated",
+        "analytics",
+        "duplication",
+        "import_runs",
+        "outcome_analytics",
+        # research and interviews
+        "parse_salary_text",
+        "read_job_salary",
+        "read_company_research",
+        "read_job_company_research",
+        "read_interview_prep",
+        "generate_interview_prep",
+        "read_next_practice_question",
+        "record_practice_answer",
+        "list_interview_rounds",
+        "create_interview_round",
+        "update_interview_round",
+        "delete_interview_round",
+    }
+)
+
+HOSTED_POLICY: dict[str, str] = {
+    **{name: "personal" for name in _HOSTED_PERSONAL},
+    **{name: "admin" for name in _HOSTED_ADMIN},
+    **{name: "blocked" for name in _HOSTED_BLOCKED_GROUP},
+}
 
 
 def get_llm(settings: Annotated[Settings, Depends(get_app_settings)]) -> LLMProvider:
+    if settings.is_multi_user:
+        # Every draft would be billed to whoever runs the installation; hosted users get
+        # the rule-based letter, which is checked against the same facts.
+        from app.llm.null_provider import NullProvider
+
+        return NullProvider()
     return build_provider(settings)
 
 
@@ -238,3 +476,4 @@ AppSettings = Annotated[Settings, Depends(get_app_settings)]
 Profile = Annotated[CandidateProfile, Depends(get_profile)]
 Llm = Annotated[LLMProvider, Depends(get_llm)]
 Authorized = Depends(require_auth)
+CurrentUser = Annotated[User | None, Depends(current_user)]

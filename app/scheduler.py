@@ -134,9 +134,10 @@ def run_discovery_once(
             outcomes[source.value] = report.message
 
             if report.jobs_created:
-                profile = ProfileRepository(session).get_default()
-                if profile is not None:
-                    ScoringService(session).score_many(profile, job_ids=report.created_job_ids)
+                # Jobs are shared; every profile gets its own match for each new listing.
+                scoring = ScoringService(session)
+                for profile in ProfileRepository(session).list_all():
+                    scoring.score_many(profile, job_ids=report.created_job_ids)
 
     with session_scope() as session:
         archived = archive_stale_jobs(session)

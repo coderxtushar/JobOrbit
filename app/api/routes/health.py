@@ -28,10 +28,12 @@ def health(session: DbSession, settings: AppSettings) -> dict[str, object]:
         "database": "ok" if database_ok else "unreachable",
         "database_dialect": session.get_bind().dialect.name,
         "llm_provider": settings.llm_provider,
-        "llm_enabled": settings.llm_enabled,
+        "llm_enabled": settings.llm_enabled and not settings.is_multi_user,
         "scheduler_enabled": settings.scheduler_enabled,
         "loopback_only": settings.is_loopback_only,
         "demo_mode": settings.demo_mode,
+        # "local" (one person, no sign-in) or "google" (hosted, every request signed in).
+        "auth_mode": settings.auth_mode,
         # Read from the adapters' own capability reports, the same source as
         # /api/autoapply/capabilities, so the two can never disagree.
         "automated_submission_supported": bool(targets),

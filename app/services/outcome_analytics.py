@@ -31,6 +31,7 @@ from app.config import get_settings
 from app.db.models import (
     Application,
     ApplicationStatus,
+    AutoApplyRun,
     CandidateProfile,
     InterviewRound,
     JobMatch,
@@ -161,8 +162,16 @@ def build_outcome_report(session: Session, profile: CandidateProfile) -> Outcome
     applications = session.scalars(
         select(Application).where(Application.profile_id == profile.id)
     ).all()
-    attempts = session.scalars(select(SubmissionAttempt)).all()
-    rounds = session.scalars(select(InterviewRound)).all()
+    attempts = session.scalars(
+        select(SubmissionAttempt)
+        .join(AutoApplyRun, AutoApplyRun.id == SubmissionAttempt.autoapply_run_id)
+        .where(AutoApplyRun.profile_id == profile.id)
+    ).all()
+    rounds = session.scalars(
+        select(InterviewRound)
+        .join(Application, Application.id == InterviewRound.application_id)
+        .where(Application.profile_id == profile.id)
+    ).all()
 
     # ---- funnel ----
     duplicates = sum(1 for job in jobs.values() if job.duplicate_of_id is not None)

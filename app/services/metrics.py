@@ -28,22 +28,25 @@ def operational_metrics(session: Session, profile_id: int) -> OperationalMetrics
     matches = MatchRepository(session)
     runs = ImportRunRepository(session)
 
-    status_counts = applications.status_counts()
+    status_counts = applications.status_counts(profile_id)
     import_totals = runs.totals()
 
     review_queue = int(
         session.scalar(
             select(func.count(Application.id)).where(
+                Application.profile_id == profile_id,
                 Application.status.in_(
                     [ApplicationStatus.READY_FOR_REVIEW, ApplicationStatus.APPROVED]
-                )
+                ),
             )
         )
         or 0
     )
     prepared = int(
         session.scalar(
-            select(func.count(Application.id)).where(Application.prepared_at.is_not(None))
+            select(func.count(Application.id)).where(
+                Application.profile_id == profile_id, Application.prepared_at.is_not(None)
+            )
         )
         or 0
     )
@@ -58,7 +61,7 @@ def operational_metrics(session: Session, profile_id: int) -> OperationalMetrics
         match_bands=matches.band_counts(profile_id),
         review_queue_size=review_queue,
         applications_by_status=status_counts,
-        applications_by_outcome=applications.outcome_counts(),
+        applications_by_outcome=applications.outcome_counts(profile_id),
         applications_prepared=prepared,
         applications_submitted=status_counts.get(ApplicationStatus.SUBMITTED.value, 0)
         + status_counts.get(ApplicationStatus.CONFIRMED.value, 0),

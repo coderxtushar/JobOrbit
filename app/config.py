@@ -42,6 +42,23 @@ class Settings(BaseSettings):
     #: resume would be readable by the next. Enforced in the API, not just hidden in the UI.
     demo_mode: bool = False
 
+    # ---------- Accounts (hosted mode) ----------
+    #: ``local``: one person, no sign-in (every request acts as the local owner).
+    #: ``google``: every request must carry a session created from a verified Google
+    #: sign-in, and each signed-in user sees only their own profile and applications.
+    auth_mode: Literal["local", "google"] = "local"
+    #: The OAuth client id Google issues the website; ID tokens must be minted for it.
+    google_client_id: str = ""
+    session_days: int = Field(default=30, ge=1, le=365)
+    #: Sign-ups beyond this many accounts are refused (a free-tier database is small).
+    max_users: int = Field(default=200, ge=1, le=100000)
+    #: Comma-separated emails allowed to run installation-wide actions in google mode
+    #: (discovery, imports, source settings, the emergency stop).
+    admin_emails: str = ""
+    #: In google mode jobs are shared, so archiving uses this installation-wide age rather
+    #: than one person's limit; each person's own limit still applies to their matches.
+    archive_after_days: int = Field(default=60, ge=1, le=3650)
+
     # ---------- Storage ----------
     database_url: str = "sqlite+pysqlite:///./var/jobassist.db"
     data_dir: Path = Path("./var")
@@ -210,6 +227,31 @@ class Settings(BaseSettings):
                 "or bind to 127.0.0.1."
             )
         return self
+
+    @model_validator(mode="after")
+    def _require_google_settings(self) -> Settings:
+        """Google mode without a client id or a service token would accept anyone."""
+        if self.auth_mode == "google":
+            if not self.google_client_id.strip():
+                raise ValueError("JA_AUTH_MODE=google needs JA_GOOGLE_CLIENT_ID.")
+            if not self.api_token:
+                raise ValueError(
+                    "JA_AUTH_MODE=google needs JA_API_TOKEN: the website proves it is the "
+                    "website with it before any session is trusted."
+                )
+            if self.demo_mode:
+                raise ValueError("JA_AUTH_MODE=google and JA_DEMO_MODE cannot both be on.")
+        return self
+
+    @property
+    def is_multi_user(self) -> bool:
+        return self.auth_mode == "google"
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        return frozenset(
+            email.strip().lower() for email in self.admin_emails.split(",") if email.strip()
+        )
 
     @property
     def is_loopback_only(self) -> bool:

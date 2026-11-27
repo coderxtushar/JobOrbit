@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.deps import AppSettings, Authorized, DbSession
+from app.api.deps import AppSettings, Authorized, DbSession, Profile
 from app.api.errors import ApiError
 from app.db.models import SourceName
 from app.db.repositories import ApplicationRepository, JobRepository, SourceConfigRepository
@@ -88,9 +88,11 @@ def _actions(
 
 
 @router.get("", response_model=list[PlatformSummary], summary="List platform assistants")
-def list_platforms(session: DbSession, settings: AppSettings) -> list[PlatformSummary]:
+def list_platforms(
+    session: DbSession, settings: AppSettings, profile: Profile
+) -> list[PlatformSummary]:
     job_counts = JobRepository(session).counts_by_source()
-    app_counts = ApplicationRepository(session).counts_by_source()
+    app_counts = ApplicationRepository(session).counts_by_source(profile.id)
     configs = {config.source: config for config in SourceConfigRepository(session).list_all()}
 
     summaries: list[PlatformSummary] = []
@@ -120,7 +122,9 @@ def list_platforms(session: DbSession, settings: AppSettings) -> list[PlatformSu
 
 
 @router.get("/{key}", response_model=PlatformDetail, summary="One platform assistant in detail")
-def read_platform(key: str, session: DbSession, settings: AppSettings) -> PlatformDetail:
+def read_platform(
+    key: str, session: DbSession, settings: AppSettings, profile: Profile
+) -> PlatformDetail:
     platform = get_platform(key)
     if platform is None:
         raise ApiError("platform_not_found", f"no platform assistant named '{key}'", 404)
@@ -128,7 +132,7 @@ def read_platform(key: str, session: DbSession, settings: AppSettings) -> Platfo
     jobs = JobRepository(session)
     applications = ApplicationRepository(session)
     job_counts = jobs.counts_by_source()
-    app_counts = applications.counts_by_source()
+    app_counts = applications.counts_by_source(profile.id)
     configs = {config.source: config for config in SourceConfigRepository(session).list_all()}
 
     source_reads: list[PlatformSourceRead] = []
@@ -180,5 +184,5 @@ def read_platform(key: str, session: DbSession, settings: AppSettings) -> Platfo
         ),
         sources=source_reads,
         jobs_by_status=jobs.status_counts_for_sources(sources),
-        applications_by_status=applications.status_counts_for_sources(sources),
+        applications_by_status=applications.status_counts_for_sources(sources, profile.id),
     )

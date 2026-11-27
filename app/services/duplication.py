@@ -273,7 +273,9 @@ def _find_normalization_collisions(jobs: list[Job]) -> list[NormalizationCollisi
     return collisions
 
 
-def analyse_duplication(session: Session, *, suspect_limit: int = 25) -> DuplicationReport:
+def analyse_duplication(
+    session: Session, *, suspect_limit: int = 25, profile_id: int | None = None
+) -> DuplicationReport:
     """Measure duplication across every stored job and sighting."""
     jobs = list(session.scalars(light_jobs_query()).all())
     jobs_by_id = {job.id: job for job in jobs}
@@ -313,7 +315,12 @@ def analyse_duplication(session: Session, *, suspect_limit: int = 25) -> Duplica
         report.cross_source_duplicate_rate = round(report.multi_source_jobs / report.jobs_total, 4)
 
     applied_job_ids = set(
-        session.scalars(select(Application.job_id).where(Application.job_id.isnot(None))).all()
+        session.scalars(
+            select(Application.job_id).where(
+                Application.job_id.isnot(None),
+                *([Application.profile_id == profile_id] if profile_id is not None else []),
+            )
+        ).all()
     )
     report.jobs_with_application = len(applied_job_ids & set(jobs_by_id))
     report.multi_source_jobs_with_application = sum(

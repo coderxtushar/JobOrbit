@@ -48,6 +48,7 @@ from app.db.models import (
     JobMatch,
     JobSourceReference,
     JobStatus,
+    JobUserState,
     SourceName,
     utcnow,
 )
@@ -162,6 +163,13 @@ def select_job_ids(
         )
         .where(
             Job.status.notin_([JobStatus.DUPLICATE, JobStatus.EXPIRED, JobStatus.SKIPPED]),
+            ~select(JobUserState.id)
+            .where(
+                JobUserState.job_id == Job.id,
+                JobUserState.profile_id == profile.id,
+                JobUserState.state == "skipped",
+            )
+            .exists(),
             Application.id.is_(None) | Application.status.notin_(_ALREADY_HANDLED),
         )
     )

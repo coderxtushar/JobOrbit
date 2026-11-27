@@ -18,10 +18,16 @@ class ProfileRepository:
         return self._session.get(CandidateProfile, profile_id)
 
     def get_default(self) -> CandidateProfile | None:
-        """The single local user's profile, i.e. the lowest-id row."""
+        """The local owner's profile: the lowest-id row that no signed-in user owns."""
         return self._session.scalars(
-            select(CandidateProfile).order_by(CandidateProfile.id).limit(1)
+            select(CandidateProfile)
+            .where(CandidateProfile.user_id.is_(None))
+            .order_by(CandidateProfile.id)
+            .limit(1)
         ).first()
+
+    def list_all(self) -> list[CandidateProfile]:
+        return list(self._session.scalars(select(CandidateProfile).order_by(CandidateProfile.id)))
 
     def get_or_create_default(self) -> CandidateProfile:
         existing = self.get_default()

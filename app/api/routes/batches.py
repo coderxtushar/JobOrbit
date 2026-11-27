@@ -95,7 +95,7 @@ def start_batch(
 ) -> BatchRunDetail:
     refuse_in_demo_mode(settings, "batch_run")
     runs = BatchRunRepository(session)
-    active = runs.active()
+    active = runs.active(profile.id)
     if active is not None:
         raise ApiError(
             "batch_already_running",
@@ -155,30 +155,36 @@ def _execute_quietly(run_id: int, include_cover_letter: bool) -> None:
 @router.get("", response_model=Page[BatchRunRead], summary="List batch runs")
 def list_batches(
     session: DbSession,
+    profile: Profile,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[BatchRunRead]:
     runs = BatchRunRepository(session)
     return Page(
-        items=[BatchRunRead.model_validate(run) for run in runs.list(limit=limit, offset=offset)],
-        total=runs.count(),
+        items=[
+            BatchRunRead.model_validate(run)
+            for run in runs.list(profile.id, limit=limit, offset=offset)
+        ],
+        total=runs.count(profile.id),
         limit=limit,
         offset=offset,
     )
 
 
 @router.get("/{run_id}", response_model=BatchRunDetail, summary="One batch run with its items")
-def get_batch(run_id: int, session: DbSession) -> BatchRunDetail:
-    run = BatchRunRepository(session).get(run_id)
+def get_batch(run_id: int, session: DbSession, profile: Profile) -> BatchRunDetail:
+    run = BatchRunRepository(session).get(run_id, profile.id)
     if run is None:
         raise ApiError("not_found", f"No batch run with id {run_id}.", status.HTTP_404_NOT_FOUND)
     return _detail(session, run)
 
 
 @router.post("/{run_id}/cancel", response_model=BatchRunDetail, summary="Stop a running batch")
-def cancel_batch(run_id: int, session: DbSession, provider: Llm) -> BatchRunDetail:
+def cancel_batch(
+    run_id: int, session: DbSession, provider: Llm, profile: Profile
+) -> BatchRunDetail:
     runs = BatchRunRepository(session)
-    run = runs.get(run_id)
+    run = runs.get(run_id, profile.id)
     if run is None:
         raise ApiError("not_found", f"No batch run with id {run_id}.", status.HTTP_404_NOT_FOUND)
     if run.finished_at is not None:
@@ -200,10 +206,11 @@ def resume_batch(
     run_id: int,
     session: DbSession,
     provider: Llm,
+    profile: Profile,
     run_in_background: Annotated[bool, Query()] = True,
 ) -> BatchRunDetail:
     runs = BatchRunRepository(session)
-    run = runs.get(run_id)
+    run = runs.get(run_id, profile.id)
     if run is None:
         raise ApiError("not_found", f"No batch run with id {run_id}.", status.HTTP_404_NOT_FOUND)
     if run.status in (BatchStatus.RUNNING, BatchStatus.CANCELLING):

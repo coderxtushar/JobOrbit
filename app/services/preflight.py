@@ -42,6 +42,7 @@ from app.db.models import (
     JobMatch,
     JobSourceReference,
     JobStatus,
+    JobUserState,
     Resume,
     SavedAnswer,
     SubmissionAttempt,
@@ -429,6 +430,14 @@ def run_preflight(
         )
     rows = session.execute(statement).all()
     job_ids = [job.id for job, _ in rows]
+    skipped_by_profile = {
+        job_id: True
+        for job_id in session.scalars(
+            select(JobUserState.job_id).where(
+                JobUserState.profile_id == profile.id, JobUserState.state == "skipped"
+            )
+        )
+    }
 
     sources_by_job: dict[int, list[str]] = defaultdict(list)
     for job_id, source in session.execute(
@@ -546,7 +555,7 @@ def run_preflight(
             counts.previously_applied += 1
             plans.append(plan)
             continue
-        if job.status is JobStatus.SKIPPED:
+        if job.status is JobStatus.SKIPPED or skipped_by_profile.get(job.id):
             plan.status = STATUS_BLOCKED
             plan.blocking_reasons.append("you skipped this job")
             counts.blocked_by_constraints += 1

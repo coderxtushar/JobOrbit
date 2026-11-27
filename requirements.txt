@@ -10,6 +10,8 @@ SQLAlchemy==2.0.37
 alembic==1.14.1
 # Postgres driver, for a hosted database (JA_DATABASE_URL=postgresql+psycopg://...).
 psycopg[binary]==3.3.9
+# Verifies Google ID tokens in hosted (JA_AUTH_MODE=google) mode.
+PyJWT[crypto]==2.15.1
 APScheduler==3.11.0
 requests==2.34.2
 httpx==0.28.1

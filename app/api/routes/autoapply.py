@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 
 from app.api.deps import AppSettings, Authorized, DbSession, Llm, Profile, refuse_in_demo_mode
 from app.api.errors import ApiError
-from app.db.models import AutoApplyRun, SubmissionAttempt, SubmissionState
+from app.db.models import AutoApplyRun, CandidateProfile, SubmissionAttempt, SubmissionState
 from app.logging_conf import get_logger
 from app.schemas.autoapply import (
     AutoApplyRunRead,
@@ -218,14 +218,20 @@ def _execute_quietly(run_id: int, targets: AutoApplyTargets) -> None:
 @router.get("", response_model=Page[AutoApplyRunRead], summary="List auto-apply runs")
 def list_runs(
     session: DbSession,
+    profile: Profile,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[AutoApplyRunRead]:
     from sqlalchemy import func, select
 
-    total = int(session.scalar(select(func.count()).select_from(AutoApplyRun)) or 0)
+    mine = AutoApplyRun.profile_id == profile.id
+    total = int(session.scalar(select(func.count(AutoApplyRun.id)).where(mine)) or 0)
     rows = session.scalars(
-        select(AutoApplyRun).order_by(AutoApplyRun.id.desc()).limit(limit).offset(offset)
+        select(AutoApplyRun)
+        .where(mine)
+        .order_by(AutoApplyRun.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
     return Page[AutoApplyRunRead](
         items=[_read(row) for row in rows], total=total, limit=limit, offset=offset
@@ -233,13 +239,13 @@ def list_runs(
 
 
 @router.get("/runs/{run_id}", response_model=AutoApplyRunRead, summary="One run with its attempts")
-def get_run(run_id: int, session: DbSession) -> AutoApplyRunRead:
-    return _read(_require(session, run_id))
+def get_run(run_id: int, session: DbSession, profile: Profile) -> AutoApplyRunRead:
+    return _read(_require(session, run_id, profile))
 
 
 @router.post("/runs/{run_id}/pause", response_model=AutoApplyRunRead, summary="Pause a run")
-def pause_run(run_id: int, session: DbSession, provider: Llm) -> AutoApplyRunRead:
-    run = _require(session, run_id)
+def pause_run(run_id: int, session: DbSession, provider: Llm, profile: Profile) -> AutoApplyRunRead:
+    run = _require(session, run_id, profile)
     AutoApplyService(provider=provider).request_pause(session, run_id)
     session.flush()
     session.refresh(run)
@@ -252,10 +258,11 @@ def resume_run(
     session: DbSession,
     provider: Llm,
     settings: AppSettings,
+    profile: Profile,
     run_in_background: Annotated[bool, Query()] = False,
 ) -> AutoApplyRunRead:
     refuse_in_demo_mode(settings, "autoapply_resume")
-    run = _require(session, run_id)
+    run = _require(session, run_id, profile)
     if is_emergency_stopped(session):
         raise ApiError(
             "emergency_stop_active",
@@ -275,14 +282,16 @@ def resume_run(
         ).start()
         return _read(run)
     service.execute(run_id, targets)
-    refreshed = _require(session, run_id)
+    refreshed = _require(session, run_id, profile)
     session.refresh(refreshed)
     return _read(refreshed)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=AutoApplyRunRead, summary="Stop a run")
-def cancel_run(run_id: int, session: DbSession, provider: Llm) -> AutoApplyRunRead:
-    run = _require(session, run_id)
+def cancel_run(
+    run_id: int, session: DbSession, provider: Llm, profile: Profile
+) -> AutoApplyRunRead:
+    run = _require(session, run_id, profile)
     AutoApplyService(provider=provider).request_cancel(session, run_id)
     session.flush()
     session.refresh(run)
@@ -294,8 +303,8 @@ def cancel_run(run_id: int, session: DbSession, provider: Llm) -> AutoApplyRunRe
     response_class=Response,
     summary="Plain-text report for one run",
 )
-def run_report(run_id: int, session: DbSession) -> Response:
-    run = _require(session, run_id)
+def run_report(run_id: int, session: DbSession, profile: Profile) -> Response:
+    run = _require(session, run_id, profile)
     lines = [
         f"JobOrbit auto-apply run {run.id}",
         f"started    {run.started_at.isoformat()}",
@@ -329,9 +338,10 @@ def run_report(run_id: int, session: DbSession) -> Response:
     )
 
 
-def _require(session: DbSession, run_id: int) -> AutoApplyRun:
+def _require(session: DbSession, run_id: int, profile: CandidateProfile) -> AutoApplyRun:
+    """The run, if it belongs to this profile; another person's run is "not found"."""
     run = session.get(AutoApplyRun, run_id)
-    if run is None:
+    if run is None or run.profile_id != profile.id:
         raise ApiError("not_found", f"no auto-apply run {run_id}", status.HTTP_404_NOT_FOUND)
     return run
 
@@ -483,9 +493,12 @@ def cleanup_evidence(session: DbSession, settings: AppSettings) -> dict[str, int
 # --------------------------------------------------------------------------------------
 
 
-def _require_attempt(session: DbSession, attempt_id: int) -> SubmissionAttempt:
+def _require_attempt(
+    session: DbSession, attempt_id: int, profile: CandidateProfile
+) -> SubmissionAttempt:
     attempt = session.get(SubmissionAttempt, attempt_id)
-    if attempt is None:
+    run = session.get(AutoApplyRun, attempt.autoapply_run_id) if attempt is not None else None
+    if attempt is None or run is None or run.profile_id != profile.id:
         raise ApiError("not_found", f"no attempt {attempt_id}", status.HTTP_404_NOT_FOUND)
     return attempt
 
@@ -495,8 +508,8 @@ def _require_attempt(session: DbSession, attempt_id: int) -> SubmissionAttempt:
     response_model=SubmissionAttemptDetail,
     summary="One attempt with its answers, artifacts and event timeline",
 )
-def get_attempt(attempt_id: int, session: DbSession) -> SubmissionAttemptDetail:
-    return SubmissionAttemptDetail.model_validate(_require_attempt(session, attempt_id))
+def get_attempt(attempt_id: int, session: DbSession, profile: Profile) -> SubmissionAttemptDetail:
+    return SubmissionAttemptDetail.model_validate(_require_attempt(session, attempt_id, profile))
 
 
 @router.get(
@@ -504,9 +517,11 @@ def get_attempt(attempt_id: int, session: DbSession) -> SubmissionAttemptDetail:
     response_class=FileResponse,
     summary="The attempt's screenshot (authorised, never a public URL)",
 )
-def attempt_evidence(attempt_id: int, session: DbSession, settings: AppSettings) -> FileResponse:
+def attempt_evidence(
+    attempt_id: int, session: DbSession, settings: AppSettings, profile: Profile
+) -> FileResponse:
     refuse_in_demo_mode(settings, "autoapply_control")
-    path = control.evidence_file(_require_attempt(session, attempt_id), settings.data_dir)
+    path = control.evidence_file(_require_attempt(session, attempt_id, profile), settings.data_dir)
     if path is None:
         raise ApiError(
             "not_found",
@@ -526,12 +541,12 @@ def attempt_evidence(attempt_id: int, session: DbSession, settings: AppSettings)
     summary="Look again for confirmation of an unclear outcome, without resubmitting",
 )
 def recheck_attempt(
-    attempt_id: int, session: DbSession, settings: AppSettings
+    attempt_id: int, session: DbSession, settings: AppSettings, profile: Profile
 ) -> SubmissionAttemptDetail:
     """Re-reads the tab left open after the attempt, and any confirmation email already
     linked to the application. Never presses Submit again."""
     refuse_in_demo_mode(settings, "autoapply_control")
-    attempt = _require_attempt(session, attempt_id)
+    attempt = _require_attempt(session, attempt_id, profile)
     if attempt.state not in (SubmissionState.OUTCOME_UNKNOWN, SubmissionState.REQUIRES_USER_ACTION):
         raise ApiError(
             "not_unclear",
@@ -551,10 +566,14 @@ def recheck_attempt(
     summary="Record what you found when you checked an unclear outcome yourself",
 )
 def resolve_attempt(
-    attempt_id: int, payload: ResolveAttemptIn, session: DbSession, settings: AppSettings
+    attempt_id: int,
+    payload: ResolveAttemptIn,
+    session: DbSession,
+    settings: AppSettings,
+    profile: Profile,
 ) -> SubmissionAttemptDetail:
     refuse_in_demo_mode(settings, "autoapply_control")
-    attempt = _require_attempt(session, attempt_id)
+    attempt = _require_attempt(session, attempt_id, profile)
     from app.services.autoapply_resolution import ResolutionError, resolve
 
     try:

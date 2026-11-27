@@ -459,6 +459,11 @@ def test_mutating_endpoints_are_either_blocked_or_session_scoped() -> None:
         "cleanup_evidence",
         "recheck_attempt",
         "resolve_attempt",
+        # Accounts exist only in hosted (google) mode, which cannot be combined with demo
+        # mode; these routes refuse with 409 not_hosted everywhere else.
+        "create_session",
+        "delete_session",
+        "delete_my_account",
     }
     app = create_app()
     mutating = {

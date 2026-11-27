@@ -59,3 +59,6 @@ trace*.zip
 # A packed browser extension and its signing key.
 *.crx
 extension/*.zip
+
+# Local deployment notes may hold live tokens.
+render.txt
