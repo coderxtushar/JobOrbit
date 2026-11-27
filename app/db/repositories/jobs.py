@@ -13,7 +13,15 @@ from typing import Any
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Job, JobMatch, JobSourceReference, JobStatus, SourceName, utcnow
+from app.db.models import (
+    Application,
+    Job,
+    JobMatch,
+    JobSourceReference,
+    JobStatus,
+    SourceName,
+    utcnow,
+)
 
 
 @dataclass(slots=True)
@@ -29,6 +37,9 @@ class JobQuery:
     discovered_after: datetime | None = None
     bands: list[str] = field(default_factory=list)
     include_duplicates: bool = False
+    #: Expired (archived) listings are hidden unless asked for, by this flag or by
+    #: naming EXPIRED in ``statuses``.
+    include_expired: bool = False
     unscored_only: bool = False
     profile_id: int | None = None
     sort_by: str = "score"
@@ -132,12 +143,18 @@ class JobRepository:
         return job
 
     def mark_expired_before(self, cutoff: datetime) -> int:
-        """Mark listings whose posting date is older than ``cutoff`` as expired."""
+        """Mark listings whose posting date is older than ``cutoff`` as expired.
+
+        Undated listings are left alone (their age is unknown), and so is anything the
+        person chose to keep: a shortlisted job, or one with an application.
+        """
+        has_application = select(Application.id).where(Application.job_id == Job.id).exists()
         jobs = self._session.scalars(
             select(Job).where(
                 Job.posted_at.is_not(None),
                 Job.posted_at < cutoff,
-                Job.status.not_in([JobStatus.EXPIRED, JobStatus.DUPLICATE]),
+                Job.status.not_in([JobStatus.EXPIRED, JobStatus.DUPLICATE, JobStatus.SHORTLISTED]),
+                ~has_application,
             )
         ).all()
         for job in jobs:
@@ -152,6 +169,8 @@ class JobRepository:
             statement = statement.where(Job.duplicate_of_id.is_(None))
         if query.statuses:
             statement = statement.where(Job.status.in_(query.statuses))
+        elif not query.include_expired:
+            statement = statement.where(Job.status != JobStatus.EXPIRED)
         if query.company:
             statement = statement.where(Job.company_normalized.like(f"%{query.company.lower()}%"))
         if query.search:

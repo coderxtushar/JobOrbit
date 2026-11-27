@@ -85,7 +85,7 @@ export function JobFilterPanel({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ANY}>Any status</SelectItem>
+              <SelectItem value={ANY}>Any status (expired hidden)</SelectItem>
               {JOB_STATUSES.map((status) => (
                 <SelectItem key={status} value={status}>
                   {JOB_STATUS[status]?.label ?? status}

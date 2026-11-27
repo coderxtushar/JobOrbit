@@ -25,6 +25,7 @@ from app.db.base import session_scope
 from app.db.models import ImportRun, ImportStatus, utcnow
 from app.db.repositories import ImportRunRepository, ProfileRepository, SourceConfigRepository
 from app.logging_conf import get_logger
+from app.services.archive import archive_stale_jobs
 from app.services.ingest import JobIngestService
 from app.services.scoring import ScoringService
 from app.sources import DISCOVERY_SOURCES, get_adapter
@@ -136,6 +137,11 @@ def run_discovery_once(
                 profile = ProfileRepository(session).get_default()
                 if profile is not None:
                     ScoringService(session).score_many(profile, job_ids=report.created_job_ids)
+
+    with session_scope() as session:
+        archived = archive_stale_jobs(session)
+    if archived:
+        outcomes["archive"] = f"{archived} listing(s) older than your age limit archived"
 
     logger.info("scheduled discovery finished", extra={"outcomes": outcomes})
     return outcomes

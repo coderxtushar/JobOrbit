@@ -285,6 +285,7 @@ def list_jobs(
     min_score: Annotated[float | None, Query(ge=0, le=100)] = None,
     max_age_days: Annotated[int | None, Query(ge=1, le=3650)] = None,
     include_duplicates: bool = False,
+    include_expired: bool = False,
     sort_by: Annotated[
         str, Query(pattern="^(score|posted_at|discovered_at|company|title)$")
     ] = "score",
@@ -300,6 +301,7 @@ def list_jobs(
         min_score=min_score,
         max_age_days=max_age_days,
         include_duplicates=include_duplicates,
+        include_expired=include_expired,
         profile_id=profile.id,
         sort_by=sort_by,
         descending=descending,
