@@ -68,6 +68,37 @@ _QUERY_TERMS = (
 )
 
 
+def _describe_gmail_error(response: httpx.Response) -> str:
+    """Turn a Gmail error into something a person can act on.
+
+    Google's error body names the cause (an API switched off, a quota, a missing scope);
+    it carries no token or message content, so its own message is safe to show.
+    """
+    status = response.status_code
+    try:
+        error = response.json().get("error") or {}
+    except (ValueError, AttributeError):
+        error = {}
+    if not isinstance(error, dict):
+        error = {}
+    reasons = {
+        str(item.get("reason")) for item in error.get("errors") or [] if isinstance(item, dict)
+    }
+    reasons |= {
+        str(item.get("reason")) for item in error.get("details") or [] if isinstance(item, dict)
+    }
+    if reasons & {"accessNotConfigured", "SERVICE_DISABLED"}:
+        return (
+            "The Gmail API is turned off in the Google Cloud project that owns your OAuth "
+            "client. In Google Cloud Console, open APIs & Services, then Library, search "
+            "for Gmail API and press Enable. Wait a minute, then connect again."
+        )
+    message = " ".join(str(error.get("message") or "").split())[:300]
+    return (
+        f"Gmail returned HTTP {status}: {message}" if message else f"Gmail returned HTTP {status}"
+    )
+
+
 class GmailError(RuntimeError):
     """A user-facing Gmail failure. Messages are redacted and never contain tokens."""
 
@@ -261,7 +292,12 @@ class GmailClient:
                 "myaccount.google.com/permissions and connect again."
             )
 
-        address = self._profile_address(access_token)
+        try:
+            address = self._profile_address(access_token)
+        except GmailError:
+            # The grant is useless if Gmail itself refuses it, so do not leave it live.
+            self._revoke(refresh_token)
+            raise
         account = session.scalars(
             select(EmailAccount).where(
                 EmailAccount.provider == "gmail", EmailAccount.address == address
@@ -333,7 +369,7 @@ class GmailClient:
         except httpx.HTTPError as error:
             raise GmailError(f"Gmail could not be reached: {type(error).__name__}") from error
         if response.status_code >= 400:
-            raise GmailError(f"Gmail returned HTTP {response.status_code}")
+            raise GmailError(_describe_gmail_error(response))
         try:
             payload = response.json()
         except ValueError as error:

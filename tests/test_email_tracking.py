@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage as MimeMessage
 from email.utils import format_datetime, make_msgid
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -677,10 +678,14 @@ class FakeGoogle:
     """A recording stand-in for Google's OAuth and Gmail endpoints."""
 
     def __init__(
-        self, messages: dict[str, str] | None = None, granted_scope: str = GMAIL_READONLY_SCOPE
+        self,
+        messages: dict[str, str] | None = None,
+        granted_scope: str = GMAIL_READONLY_SCOPE,
+        profile_error: tuple[int, dict[str, Any]] | None = None,
     ):
         self.messages = messages or {}
         self.granted_scope = granted_scope
+        self.profile_error = profile_error
         self.requests: list[httpx.Request] = []
         self.revoked: list[str] = []
 
@@ -706,6 +711,8 @@ class FakeGoogle:
             self.revoked.append(parse_qs(request.content.decode())["token"][0])
             return httpx.Response(200)
         if url.startswith(f"{gmail_module.GMAIL_API}/profile"):
+            if self.profile_error is not None:
+                return httpx.Response(self.profile_error[0], json=self.profile_error[1])
             return httpx.Response(200, json={"emailAddress": "test@example.com"})
         if request.url.path.endswith("/messages"):
             return httpx.Response(
@@ -808,6 +815,37 @@ def test_a_broader_granted_scope_is_refused_and_revoked(
         _connect(session, google)
     assert google.revoked == ["1//test-refresh-token"]
     assert session.scalars(select(EmailAccount)).all() == []
+
+
+_GMAIL_API_DISABLED = {
+    "error": {
+        "code": 403,
+        "message": "Gmail API has not been used in project 123 before or it is disabled.",
+        "errors": [{"reason": "accessNotConfigured", "domain": "usageLimits"}],
+        "status": "PERMISSION_DENIED",
+        "details": [
+            {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "SERVICE_DISABLED"}
+        ],
+    }
+}
+
+
+def test_a_disabled_gmail_api_says_how_to_enable_it_and_revokes_the_grant(
+    tracking_enabled: None, session: Session
+) -> None:
+    google = FakeGoogle(profile_error=(403, _GMAIL_API_DISABLED))
+    with pytest.raises(GmailError, match="Gmail API is turned off") as raised:
+        _connect(session, google)
+    assert "press Enable" in str(raised.value)
+    assert google.revoked == ["1//test-refresh-token"]
+    assert session.scalars(select(EmailAccount)).all() == []
+
+
+def test_other_gmail_errors_carry_googles_reason(tracking_enabled: None, session: Session) -> None:
+    body = {"error": {"code": 429, "message": "Quota exceeded for quota metric 'Queries'."}}
+    google = FakeGoogle(profile_error=(429, body))
+    with pytest.raises(GmailError, match=r"HTTP 429: Quota exceeded"):
+        _connect(session, google)
 
 
 def test_sync_keeps_only_job_related_and_only_reads(
