@@ -686,6 +686,7 @@ class FakeGoogle:
         self.messages = messages or {}
         self.granted_scope = granted_scope
         self.profile_error = profile_error
+        self.rate_limit_first_reads = 0  # message reads answered "slow down" before succeeding
         self.requests: list[httpx.Request] = []
         self.revoked: list[str] = []
 
@@ -720,6 +721,18 @@ class FakeGoogle:
                 json={"messages": [{"id": key, "threadId": f"t-{key}"} for key in self.messages]},
             )
         if "/messages/" in request.url.path:
+            if self.rate_limit_first_reads > 0:
+                self.rate_limit_first_reads -= 1
+                return httpx.Response(
+                    403,
+                    json={
+                        "error": {
+                            "code": 403,
+                            "message": "Quota exceeded for quota metric 'Total Query Cost'.",
+                            "errors": [{"reason": "rateLimitExceeded"}],
+                        }
+                    },
+                )
             key = request.url.path.rsplit("/", 1)[-1]
             raw = base64.urlsafe_b64encode(self.messages[key].encode()).decode().rstrip("=")
             return httpx.Response(
@@ -846,6 +859,44 @@ def test_other_gmail_errors_carry_googles_reason(tracking_enabled: None, session
     google = FakeGoogle(profile_error=(429, body))
     with pytest.raises(GmailError, match=r"HTTP 429: Quota exceeded"):
         _connect(session, google)
+
+
+def test_sync_waits_out_a_rate_limit_instead_of_skipping_mail(
+    tracking_enabled: None,
+    session: Session,
+    profile: CandidateProfile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waits: list[float] = []
+    monkeypatch.setattr(gmail_module, "_sleep", waits.append)
+    google = FakeGoogle({"m1": make_eml(*CONFIRMATION)})
+    client, account = _connect(session, google)
+    google.rate_limit_first_reads = 2
+
+    report = client.sync(session, account)
+
+    assert report.errors == []
+    assert report.fetched == 1
+    assert waits == [2.0, 5.0]
+
+
+def test_a_rate_limit_that_never_lifts_is_reported_not_retried_forever(
+    tracking_enabled: None,
+    session: Session,
+    profile: CandidateProfile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waits: list[float] = []
+    monkeypatch.setattr(gmail_module, "_sleep", waits.append)
+    google = FakeGoogle({"m1": make_eml(*CONFIRMATION)})
+    client, account = _connect(session, google)
+    google.rate_limit_first_reads = 99
+
+    report = client.sync(session, account)
+
+    assert report.fetched == 0
+    assert len(waits) == len(gmail_module.RATE_LIMIT_BACKOFF_SECONDS)
+    assert "Quota exceeded" in report.errors[0]
 
 
 def test_sync_keeps_only_job_related_and_only_reads(

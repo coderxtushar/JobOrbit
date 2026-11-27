@@ -68,6 +68,35 @@ _QUERY_TERMS = (
 )
 
 
+#: Waits between retries of a rate-limited Gmail call. Gmail's limits are per minute per
+#: user, so the total (62 s) outlasts one window.
+RATE_LIMIT_BACKOFF_SECONDS = (2.0, 5.0, 15.0, 40.0)
+_RATE_LIMIT_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "RATE_LIMIT_EXCEEDED"}
+_sleep = time.sleep  # replaced in tests
+
+
+def _error_reasons(response: httpx.Response) -> set[str]:
+    try:
+        error = response.json().get("error") or {}
+    except (ValueError, AttributeError):
+        return set()
+    if not isinstance(error, dict):
+        return set()
+    items = list(error.get("errors") or []) + list(error.get("details") or [])
+    return {str(item.get("reason")) for item in items if isinstance(item, dict)}
+
+
+def _is_rate_limited(response: httpx.Response) -> bool:
+    if response.status_code == 429:
+        return True
+    return response.status_code == 403 and bool(_error_reasons(response) & _RATE_LIMIT_REASONS)
+
+
+def _retry_after(response: httpx.Response) -> float:
+    value = response.headers.get("retry-after", "")
+    return min(float(value), 60.0) if value.isdigit() else 0.0
+
+
 def _describe_gmail_error(response: httpx.Response) -> str:
     """Turn a Gmail error into something a person can act on.
 
@@ -81,13 +110,7 @@ def _describe_gmail_error(response: httpx.Response) -> str:
         error = {}
     if not isinstance(error, dict):
         error = {}
-    reasons = {
-        str(item.get("reason")) for item in error.get("errors") or [] if isinstance(item, dict)
-    }
-    reasons |= {
-        str(item.get("reason")) for item in error.get("details") or [] if isinstance(item, dict)
-    }
-    if reasons & {"accessNotConfigured", "SERVICE_DISABLED"}:
+    if _error_reasons(response) & {"accessNotConfigured", "SERVICE_DISABLED"}:
         return (
             "The Gmail API is turned off in the Google Cloud project that owns your OAuth "
             "client. In Google Cloud Console, open APIs & Services, then Library, search "
@@ -360,14 +383,22 @@ class GmailClient:
     def _get(
         self, url: str, access_token: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """The only way this module calls Gmail: an authorised GET."""
-        try:
-            with self._http() as client:
-                response = client.get(
-                    url, params=params, headers={"Authorization": f"Bearer {access_token}"}
-                )
-        except httpx.HTTPError as error:
-            raise GmailError(f"Gmail could not be reached: {type(error).__name__}") from error
+        """The only way this module calls Gmail: an authorised GET.
+
+        A per-minute rate limit is waited out (Retry-After when Google sends it, else a
+        growing backoff of about a minute in all); any other error is raised at once.
+        """
+        for attempt in range(len(RATE_LIMIT_BACKOFF_SECONDS) + 1):
+            try:
+                with self._http() as client:
+                    response = client.get(
+                        url, params=params, headers={"Authorization": f"Bearer {access_token}"}
+                    )
+            except httpx.HTTPError as error:
+                raise GmailError(f"Gmail could not be reached: {type(error).__name__}") from error
+            if not _is_rate_limited(response) or attempt == len(RATE_LIMIT_BACKOFF_SECONDS):
+                break
+            _sleep(_retry_after(response) or RATE_LIMIT_BACKOFF_SECONDS[attempt])
         if response.status_code >= 400:
             raise GmailError(_describe_gmail_error(response))
         try:
