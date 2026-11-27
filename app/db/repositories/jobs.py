@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Select, case, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, lazyload
 
 from app.db.models import (
     Application,
@@ -46,6 +46,22 @@ class JobQuery:
     descending: bool = True
     limit: int = 25
     offset: int = 0
+
+
+def light_jobs_query() -> Select[tuple[Job]]:
+    """Every job, without the heavy parts a whole-table report never reads.
+
+    ``Job`` eagerly loads its sightings and matches (``lazy="selectin"``), and carries the
+    full description and raw payload. Reports over every job read only a few columns, so
+    those load on access instead: the same results, without pulling the whole table's text
+    and two child tables into memory.
+    """
+    return select(Job).options(
+        lazyload(Job.source_references),
+        lazyload(Job.matches),
+        defer(Job.description),
+        defer(Job.raw_payload),
+    )
 
 
 #: Alias used for return annotations inside :class:`JobRepository`. The class defines a

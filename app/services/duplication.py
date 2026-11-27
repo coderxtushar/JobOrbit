@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Application, Job, JobSourceReference
+from app.db.repositories.jobs import light_jobs_query
 from app.services.dedup import MatchKind
 from app.services.text import collapse_whitespace, normalize_company
 
@@ -204,10 +205,12 @@ def _find_missed_merges(
         if len(bucket) > MAX_BUCKET_FOR_PAIR_SEARCH:
             skipped.append(f"{company} ({len(bucket)} jobs)")
             continue
+        # Tokenise each title once: the pair loop below is quadratic in the bucket.
+        tokens = [_tokens(job.title) for job in bucket]
         for index, left in enumerate(bucket):
-            left_tokens = _tokens(left.title)
-            for right in bucket[index + 1 :]:
-                overlap = jaccard(left_tokens, _tokens(right.title))
+            left_tokens = tokens[index]
+            for offset, right in enumerate(bucket[index + 1 :], start=index + 1):
+                overlap = jaccard(left_tokens, tokens[offset])
                 if overlap < MISSED_MERGE_TITLE_OVERLAP:
                     continue
                 left_sources = {reference.source.value for reference in sightings.get(left.id, [])}
@@ -272,7 +275,7 @@ def _find_normalization_collisions(jobs: list[Job]) -> list[NormalizationCollisi
 
 def analyse_duplication(session: Session, *, suspect_limit: int = 25) -> DuplicationReport:
     """Measure duplication across every stored job and sighting."""
-    jobs = list(session.scalars(select(Job)).all())
+    jobs = list(session.scalars(light_jobs_query()).all())
     jobs_by_id = {job.id: job for job in jobs}
     sightings = _load_sightings(session)
 

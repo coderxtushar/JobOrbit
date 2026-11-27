@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 import re
 import unicodedata
+from functools import lru_cache
 
 _WHITESPACE = re.compile(r"\s+")
 _NON_ALNUM = re.compile(r"[^a-z0-9+#.\- ]+")
@@ -163,8 +164,13 @@ def canonical_skills(values: list[str]) -> list[str]:
     return list(seen)
 
 
+@lru_cache(maxsize=8192)
 def normalize_company(value: str) -> str:
-    """Strip legal suffixes so 'Acme Technologies Pvt Ltd' and 'Acme' collide."""
+    """Strip legal suffixes so 'Acme Technologies Pvt Ltd' and 'Acme' collide.
+
+    Cached: it is pure, and whole-table reports call it for every job while a database
+    holds only a few hundred distinct employer names.
+    """
     base = normalize_text(value)
     if not base:
         return ""

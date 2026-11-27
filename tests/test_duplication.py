@@ -8,9 +8,11 @@ silently accepted.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.db.models import CandidateProfile, JobStatus, SourceName
+from app.services import duplication as duplication_module
 from app.services.duplication import (
     FALSE_MERGE_TITLE_OVERLAP,
     MISSED_MERGE_TITLE_OVERLAP,
@@ -325,6 +327,43 @@ def test_a_legal_suffix_difference_is_not_a_normalization_collision(session: Ses
 
     report = analyse_duplication(session)
     assert not report.normalization_collisions
+
+
+def test_each_title_is_tokenised_once_not_once_per_pair(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: re-tokenising inside the pair loop made a 25,000-sighting report take 3 s."""
+    titles = [
+        "Backend Developer",
+        "Frontend Developer",
+        "Data Engineer",
+        "Platform Engineer",
+        "QA Engineer",
+        "Site Reliability Engineer",
+    ]
+    for number, title in enumerate(titles):
+        _ingest(
+            session,
+            make_record(
+                external_id=f"TOK-{number}",
+                title=title,
+                description=f"{title} role number {number} with its own responsibilities.",
+                url=f"https://jobs.example.com/view/tok-{number}",
+            ),
+            source=SourceName.LINKEDIN,
+        )
+    calls: list[str] = []
+    real_tokens = duplication_module._tokens
+
+    def counting(title: str) -> frozenset[str]:
+        calls.append(title)
+        return real_tokens(title)
+
+    monkeypatch.setattr(duplication_module, "_tokens", counting)
+    analyse_duplication(session)
+
+    missed_merge_calls = [title for title in calls if title in titles]
+    assert len(missed_merge_calls) <= 2 * len(titles)  # linear, not 15 pairs x 2
 
 
 def test_jaccard_handles_empty_token_sets() -> None:

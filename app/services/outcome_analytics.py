@@ -33,13 +33,13 @@ from app.db.models import (
     ApplicationStatus,
     CandidateProfile,
     InterviewRound,
-    Job,
     JobMatch,
     JobSourceReference,
     Outcome,
     SubmissionAttempt,
     SubmissionState,
 )
+from app.db.repositories.jobs import light_jobs_query
 from app.services.resume_variants import infer_job_family
 from app.submission.states import SUBMIT_REACHED, counts_as_sent
 
@@ -146,7 +146,7 @@ def _count(outcome: Outcome, segment: Segment) -> None:
 
 def build_outcome_report(session: Session, profile: CandidateProfile) -> OutcomeReport:
     report = OutcomeReport()
-    jobs = {job.id: job for job in session.scalars(select(Job)).all()}
+    jobs = {job.id: job for job in session.scalars(light_jobs_query()).all()}
     sources: dict[int, str] = {}
     for job_id, source in session.execute(
         select(JobSourceReference.job_id, JobSourceReference.source).order_by(JobSourceReference.id)
