@@ -552,11 +552,16 @@ class SmartRecruitersAdapter(AtsBoardAdapter):
         super().__init__(settings)
         self._details_remaining = 0
 
-    def board_url(self, board: str) -> str:
-        return (
+    def _postings_url(self, board: str, offset: int) -> str:
+        url = (
             f"https://api.smartrecruiters.com/v1/companies/{board}/postings"
-            f"?limit={self._PAGE_SIZE}&offset=0"
+            f"?limit={self._PAGE_SIZE}&offset={offset}"
         )
+        country = self._settings.smartrecruiters_country.strip().lower()
+        return f"{url}&country={country}" if country else url
+
+    def board_url(self, board: str) -> str:
+        return self._postings_url(board, 0)
 
     def next_page_url(self, board: str, payload: Any, page: int) -> str | None:
         if not isinstance(payload, dict):
@@ -565,10 +570,7 @@ class SmartRecruitersAdapter(AtsBoardAdapter):
         offset = page * self._PAGE_SIZE
         if not isinstance(total, int) or offset >= total:
             return None
-        return (
-            f"https://api.smartrecruiters.com/v1/companies/{board}/postings"
-            f"?limit={self._PAGE_SIZE}&offset={offset}"
-        )
+        return self._postings_url(board, offset)
 
     def _collect_board(self, board: str) -> tuple[list[RawJobRecord], int, str, int]:
         self._details_remaining = self._settings.smartrecruiters_detail_limit

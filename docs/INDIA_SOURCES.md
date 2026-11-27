@@ -31,6 +31,35 @@ SmartRecruiters is capped by `JA_SMARTRECRUITERS_DETAIL_LIMIT` because each post
 second request for its description. Raising the cap raises the request count against
 somebody else's API in direct proportion.
 
+### Boards added 27 November 2026
+
+Chosen by probing each company's public board and counting India-located technical roles
+that are not senior (by title). Measured the same day, after one discovery run with
+`JA_SMARTRECRUITERS_COUNTRY=in`:
+
+| Provider | Board slug | India-located, not-senior tech roles in the probe | Jobs stored with a description |
+|---|---|---|---|
+| Greenhouse | `gleanwork` | 8 | 119 |
+| Greenhouse | `sigmoid` | 6 | 43 |
+| Greenhouse | `turing` | 4 | 31 |
+| Greenhouse | `twilio` | 4 | 102 |
+| Greenhouse | `coinbase` · `devrev` | 2 each | 240 · 2 |
+| Lever | `hevodata` | 11 | 42 |
+| Workable | `apna` | 11 | 110 |
+| SmartRecruiters | `BoschGroup` | 21 (in the first 500 postings) | 49 |
+| SmartRecruiters | `NielsenIQ` | 16 | 56 |
+| SmartRecruiters | `Experian` · `ServiceNow` · `shipsy` | 5 · 2 · 2 | 39 · 53 · 0 |
+
+Greenhouse, Lever, Ashby and Workable return a company's whole board, so a global
+employer (Coinbase) still brings mostly non-India roles; scoring sorts them below India
+ones. SmartRecruiters can filter by country itself: `JA_SMARTRECRUITERS_COUNTRY=in` cut
+Bosch from about 5,200 postings to about 700, and the detail cap is then spent on those.
+
+Probed and left out (no India technical roles below senior level at the time): Toast,
+PubMatic, Zenoti, Harness, Freshworks, Sumo Logic, Agoda, Elastic, Samsara, Datadog. Most
+large Indian product companies (Razorpay, Swiggy, Zomato, PhonePe, Flipkart) use an
+applicant tracking system JobOrbit has no authorized interface for.
+
 ## What the normalization fixes changed
 
 Measured on the same 2,215 stored jobs, before and after — comparable denominators:

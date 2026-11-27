@@ -495,6 +495,54 @@ def test_smartrecruiters_uses_the_country_name_not_its_iso_code(
     reset_settings_cache()
 
 
+def test_smartrecruiters_country_filter_is_sent_on_every_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A global employer's board is narrowed by SmartRecruiters itself, page after page."""
+    monkeypatch.setenv("JA_SMARTRECRUITERS_BOARDS", "BoschGroup")
+    monkeypatch.setenv("JA_SMARTRECRUITERS_DETAIL_LIMIT", "0")
+    monkeypatch.setenv("JA_SMARTRECRUITERS_COUNTRY", "IN")
+    reset_settings_cache()
+    calls: list[str] = []
+    _route(
+        monkeypatch,
+        {
+            "offset=0": _Response(SMARTRECRUITERS_PAGE_1),
+            "offset=100": _Response(SMARTRECRUITERS_PAGE_2),
+        },
+        calls,
+    )
+
+    SmartRecruitersAdapter(get_settings()).discover()
+
+    assert len(calls) == 2
+    assert all(call.endswith("&country=in") for call in calls)
+    reset_settings_cache()
+
+
+def test_smartrecruiters_sends_no_country_filter_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JA_SMARTRECRUITERS_BOARDS", "BoschGroup")
+    monkeypatch.setenv("JA_SMARTRECRUITERS_DETAIL_LIMIT", "0")
+    monkeypatch.delenv("JA_SMARTRECRUITERS_COUNTRY", raising=False)
+    reset_settings_cache()
+    calls: list[str] = []
+    _route(
+        monkeypatch,
+        {
+            "offset=0": _Response(SMARTRECRUITERS_PAGE_1),
+            "offset=100": _Response(SMARTRECRUITERS_PAGE_2),
+        },
+        calls,
+    )
+
+    SmartRecruitersAdapter(get_settings()).discover()
+
+    assert calls and not any("country=" in call for call in calls)
+    reset_settings_cache()
+
+
 def test_smartrecruiters_maps_a_real_payload_and_skips_internal_postings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

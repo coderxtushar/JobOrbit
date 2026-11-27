@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     #: per-posting detail endpoint. Each description therefore costs one extra request,
     #: so the number fetched per run is capped rather than unbounded.
     smartrecruiters_detail_limit: int = Field(default=60, ge=0, le=1000)
+    #: ISO-2 country code ("in") passed to SmartRecruiters' own ``country`` filter, so a
+    #: global employer's board returns only that country's postings. Empty = every country.
+    smartrecruiters_country: str = Field(default="", pattern=r"^([A-Za-z]{2})?$")
 
     # ---------- Open job-feed discovery ----------
     feed_discovery_enabled: bool = False
