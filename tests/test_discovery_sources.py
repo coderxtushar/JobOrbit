@@ -525,7 +525,7 @@ def test_smartrecruiters_sends_no_country_filter_by_default(
 ) -> None:
     monkeypatch.setenv("JA_SMARTRECRUITERS_BOARDS", "BoschGroup")
     monkeypatch.setenv("JA_SMARTRECRUITERS_DETAIL_LIMIT", "0")
-    monkeypatch.delenv("JA_SMARTRECRUITERS_COUNTRY", raising=False)
+    monkeypatch.setenv("JA_SMARTRECRUITERS_COUNTRY", "")  # overrides a local .env
     reset_settings_cache()
     calls: list[str] = []
     _route(
