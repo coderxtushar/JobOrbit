@@ -167,6 +167,21 @@ def test_an_in_memory_url_does_not_attempt_a_chmod() -> None:
         engine.dispose()
 
 
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        "postgresql://u:p@ep-x.neon.tech/db?sslmode=require&channel_binding=require",
+        "postgres://u:p@ep-x.neon.tech/db?sslmode=require&channel_binding=require",
+        " postgresql+psycopg://u:p@ep-x.neon.tech/db?sslmode=require&channel_binding=require ",
+    ],
+)
+def test_a_postgres_url_pasted_from_neon_uses_psycopg(pasted: str) -> None:
+    settings = Settings(database_url=pasted)
+    assert settings.database_url == (
+        "postgresql+psycopg://u:p@ep-x.neon.tech/db?sslmode=require&channel_binding=require"
+    )
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes do not apply on Windows")
 def test_the_migration_path_also_restricts_the_database_file(tmp_path: Path) -> None:
     """`alembic upgrade head` must not leave a world-readable database.

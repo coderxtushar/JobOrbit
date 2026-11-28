@@ -208,6 +208,17 @@ class Settings(BaseSettings):
             "jobicy": self.jobicy_enabled,
         }.get(source, False)
 
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg_driver(cls, value: str) -> str:
+        # Neon and most hosts hand out postgres:// or postgresql:// URLs, which SQLAlchemy
+        # maps to psycopg2; JobOrbit ships psycopg 3, so accept them as pasted.
+        value = value.strip()
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix) :]
+        return value
+
     @field_validator("log_level")
     @classmethod
     def _upper_log_level(cls, value: str) -> str:

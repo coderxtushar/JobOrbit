@@ -1,6 +1,7 @@
-# Render Blueprint: the JobOrbit API as a free web service running the public demo.
+# Render Blueprint: two free web services built from the same Docker image.
 # New > Blueprint on render.com, pick this repository, and Render reads this file.
 services:
+  # The public demo: a fictional candidate and sample jobs, one private copy per visitor.
   - type: web
     name: joborbit-api
     runtime: docker
@@ -12,8 +13,39 @@ services:
       # Fictional candidate and sample jobs; uploads, discovery and auto-apply runs refused.
       - key: JA_DEMO_MODE
         value: "true"
-      # Required off loopback. Render generates it; copy it into Vercel as JOBORBIT_API_TOKEN.
+      # Required off loopback. Render generates it; copy it into Vercel as
+      # JOBORBIT_DEMO_API_TOKEN (or JOBORBIT_API_TOKEN on a demo-only site).
       - key: JA_API_TOKEN
         generateValue: true
+      - key: JA_LOG_LEVEL
+        value: INFO
+
+  # The real app: Google sign-in, each person's own data, stored in Postgres.
+  - type: web
+    name: joborbit-app
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: JA_AUTH_MODE
+        value: google
+      # Copy into Vercel as JOBORBIT_API_TOKEN.
+      - key: JA_API_TOKEN
+        generateValue: true
+      # A Postgres connection string, pasted exactly as Neon shows it:
+      # postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require
+      - key: JA_DATABASE_URL
+        sync: false
+      # The Google OAuth client id (Web application) the website signs in with.
+      - key: JA_GOOGLE_CLIENT_ID
+        sync: false
+      # Your own email, so you can run discovery and change source settings.
+      - key: JA_ADMIN_EMAILS
+        sync: false
+      # Find new jobs every 6 hours (and score them for every account).
+      - key: JA_SCHEDULER_ENABLED
+        value: "true"
       - key: JA_LOG_LEVEL
         value: INFO
